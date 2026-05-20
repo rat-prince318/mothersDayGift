@@ -1,0 +1,1393 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>为妈妈攀登祝福之塔</title>
+    <style>
+        * {
+            margin: 0;
+            padding: 0;
+            box-sizing: border-box;
+        }
+
+        body {
+            width: 100vw;
+            height: 100vh;
+            overflow: hidden;
+            background: linear-gradient(135deg, #1a1a2e 0%, #16213e 50%, #0f0f23 100%);
+            display: flex;
+            justify-content: center;
+            align-items: center;
+            font-family: 'Georgia', 'Times New Roman', serif;
+        }
+
+        #container {
+            position: relative;
+            width: 100%;
+            height: 100%;
+        }
+
+        #bgCanvas {
+            position: absolute;
+            top: 0;
+            left: 0;
+            z-index: 1;
+        }
+
+        #mainCanvas {
+            position: absolute;
+            top: 0;
+            left: 0;
+            z-index: 2;
+        }
+
+        #transitionCanvas {
+            position: absolute;
+            top: 0;
+            left: 0;
+            z-index: 3;
+            pointer-events: none;
+        }
+
+        #blessingText {
+            position: absolute;
+            top: 20%;
+            left: 50%;
+            transform: translateX(-50%);
+            z-index: 10;
+            color: #fff;
+            font-size: clamp(16px, 3vw, 28px);
+            text-align: center;
+            padding: 0 20px;
+            max-width: 80%;
+            text-shadow: 0 0 20px rgba(255, 215, 150, 0.8),
+                         0 0 40px rgba(255, 200, 100, 0.6),
+                         0 0 60px rgba(255, 180, 80, 0.4);
+            opacity: 0;
+            transition: opacity 0.8s ease-in-out;
+            line-height: 1.6;
+            letter-spacing: 2px;
+            pointer-events: none;
+        }
+
+        #blessingText.show {
+            opacity: 1;
+        }
+
+        #climbBtn {
+            position: absolute;
+            bottom: 12%;
+            left: 50%;
+            transform: translateX(-50%);
+            z-index: 10;
+            padding: 18px 50px;
+            font-size: 20px;
+            font-family: inherit;
+            background: linear-gradient(145deg, #ffd700, #ffb347, #ff9f43);
+            color: #4a2c00;
+            border: none;
+            border-radius: 50px;
+            cursor: pointer;
+            box-shadow: 0 8px 25px rgba(255, 180, 80, 0.5),
+                        inset 0 2px 0 rgba(255, 255, 255, 0.3),
+                        inset 0 -2px 0 rgba(0, 0, 0, 0.1);
+            transition: all 0.3s ease;
+            font-weight: bold;
+            letter-spacing: 3px;
+        }
+
+        #climbBtn:hover:not(:disabled) {
+            transform: translateX(-50%) translateY(-3px);
+            box-shadow: 0 12px 35px rgba(255, 180, 80, 0.7),
+                        inset 0 2px 0 rgba(255, 255, 255, 0.4);
+        }
+
+        #climbBtn:active:not(:disabled) {
+            transform: translateX(-50%) scale(0.96);
+        }
+
+        #climbBtn:disabled {
+            display: none;
+        }
+
+        #levelIndicator {
+            position: absolute;
+            top: 20px;
+            right: 30px;
+            z-index: 10;
+            color: rgba(255, 215, 150, 0.7);
+            font-size: 16px;
+            letter-spacing: 2px;
+        }
+    </style>
+</head>
+<body>
+    <div id="container">
+        <canvas id="bgCanvas"></canvas>
+        <canvas id="mainCanvas"></canvas>
+        <canvas id="transitionCanvas"></canvas>
+        <div id="levelIndicator">第 1 层</div>
+        <div id="blessingText"></div>
+        <button id="climbBtn">向上攀登</button>
+    </div>
+
+    <script>
+    // ============================================
+    // 配置层
+    // ============================================
+    const CONFIG = {
+        transitionDuration: 1000,
+        blessingShowDuration: 4000,
+        particleCount: 50,
+        levels: [
+            {
+                name: '水晶洞穴',
+                blessing: '妈妈，你的爱如水晶般纯净，折射出我生命所有的光彩。'
+            },
+            {
+                name: '冰原',
+                blessing: '在寒冷的世界里，你是我永恒的暖阳。'
+            },
+            {
+                name: '大海',
+                blessing: '愿你的心，如大海一般辽阔而温柔。'
+            },
+            {
+                name: '沙滩',
+                blessing: '愿生活像沙滩上的脚印，每一步都通向幸福。'
+            },
+            {
+                name: '草原',
+                blessing: '你的爱，是拂过草原的暖风，让我自由生长。'
+            },
+            {
+                name: '花海',
+                blessing: '你是我生命中最美的花海，永远盛开。'
+            },
+            {
+                name: '星空',
+                blessing: '妈妈，你就是我的星光，照亮我前行的路。'
+            },
+            {
+                name: '城市',
+                blessing: '无论我走到哪个城市，有你的地方就是家。'
+            },
+            {
+                name: '天空',
+                blessing: '妈妈，母亲节快乐！你值得拥有这世上最广阔的天空。'
+            }
+        ]
+    };
+
+    // ============================================
+    // 全局状态
+    // ============================================
+    let currentLevel = 0;
+    let isTransitioning = false;
+    let animationTime = 0;
+    let globalParticles = [];
+    let levelParticles = [];
+    let transitionOpacity = 0;
+
+    // Canvas 元素
+    const bgCanvas = document.getElementById('bgCanvas');
+    const mainCanvas = document.getElementById('mainCanvas');
+    const transCanvas = document.getElementById('transitionCanvas');
+    const bgCtx = bgCanvas.getContext('2d');
+    const ctx = mainCanvas.getContext('2d');
+    const transCtx = transCanvas.getContext('2d');
+
+    const blessingEl = document.getElementById('blessingText');
+    const climbBtn = document.getElementById('climbBtn');
+    const levelIndicator = document.getElementById('levelIndicator');
+
+    // ============================================
+    // 初始化函数
+    // ============================================
+    function init() {
+        resizeCanvas();
+        initGlobalParticles();
+        window.addEventListener('resize', resizeCanvas);
+        climbBtn.addEventListener('click', climbUp);
+        requestAnimationFrame(animate);
+    }
+
+    function resizeCanvas() {
+        const w = window.innerWidth;
+        const h = window.innerHeight;
+        [bgCanvas, mainCanvas, transCanvas].forEach(c => {
+            c.width = w;
+            c.height = h;
+        });
+        initGlobalParticles();
+    }
+
+    function initGlobalParticles() {
+        globalParticles = [];
+        for (let i = 0; i < CONFIG.particleCount; i++) {
+            globalParticles.push({
+                x: Math.random() * mainCanvas.width,
+                y: Math.random() * mainCanvas.height,
+                size: Math.random() * 3 + 1,
+                speedY: Math.random() * 0.3 + 0.1,
+                opacity: Math.random() * 0.5 + 0.3,
+                twinkle: Math.random() * Math.PI * 2
+            });
+        }
+    }
+
+    // ============================================
+    // 绘制函数集 - 石窗框架
+    // ============================================
+    function drawStoneWindow(ctx, w, h, time) {
+        const brightness = 0.3 + (currentLevel / CONFIG.levels.length) * 0.7;
+
+        // 石墙背景
+        const gradient = ctx.createRadialGradient(w/2, h/2, 0, w/2, h/2, Math.max(w, h) * 0.8);
+        gradient.addColorStop(0, `rgba(60, 50, 70, ${brightness})`);
+        gradient.addColorStop(1, 'rgba(20, 15, 25, 1)');
+        ctx.fillStyle = gradient;
+        ctx.fillRect(0, 0, w, h);
+
+        // 拱形窗口区域
+        const windowWidth = Math.min(w * 0.7, 800);
+        const windowHeight = h * 0.75;
+        const windowX = (w - windowWidth) / 2;
+        const windowY = h * 0.1;
+
+        ctx.save();
+        ctx.beginPath();
+        ctx.moveTo(windowX, h);
+        ctx.lineTo(windowX, windowY + windowHeight * 0.4);
+        ctx.quadraticCurveTo(windowX, windowY, windowX + windowWidth / 2, windowY);
+        ctx.quadraticCurveTo(windowX + windowWidth, windowY, windowX + windowWidth, windowY + windowHeight * 0.4);
+        ctx.lineTo(windowX + windowWidth, h);
+        ctx.closePath();
+        ctx.clip();
+
+        // 绘制当前层景色
+        drawLevel(ctx, w, h, time);
+
+        ctx.restore();
+
+        // 绘制石窗边框
+        drawWindowFrame(ctx, w, h, windowX, windowY, windowWidth, windowHeight, time);
+
+        // 绘制藤蔓装饰
+        drawVines(ctx, windowX, windowY, windowWidth, windowHeight, time);
+    }
+
+    function drawWindowFrame(ctx, w, h, wx, wy, ww, wh, time) {
+        ctx.save();
+
+        // 外层阴影
+        ctx.shadowColor = 'rgba(0, 0, 0, 0.8)';
+        ctx.shadowBlur = 30;
+
+        // 石框
+        const frameWidth = 25;
+
+        // 左边框
+        ctx.fillStyle = '#3d3530';
+        ctx.fillRect(wx - frameWidth, wy + wh * 0.4, frameWidth, h - wy - wh * 0.4);
+
+        // 右边框
+        ctx.fillRect(wx + ww, wy + wh * 0.4, frameWidth, h - wy - wh * 0.4);
+
+        // 拱形顶部
+        ctx.beginPath();
+        ctx.moveTo(wx - frameWidth, wy + wh * 0.4);
+        ctx.quadraticCurveTo(wx - frameWidth, wy - frameWidth, wx + ww / 2, wy - frameWidth);
+        ctx.quadraticCurveTo(wx + ww + frameWidth, wy - frameWidth, wx + ww + frameWidth, wy + wh * 0.4);
+        ctx.lineTo(wx + ww, wy + wh * 0.4);
+        ctx.quadraticCurveTo(wx + ww, wy, wx + ww / 2, wy);
+        ctx.quadraticCurveTo(wx, wy, wx, wy + wh * 0.4);
+        ctx.closePath();
+        ctx.fillStyle = '#3d3530';
+        ctx.fill();
+
+        // 添加石砖纹理
+        drawBrickTexture(ctx, wx, wy, ww, wh, frameWidth);
+
+        ctx.restore();
+    }
+
+    function drawBrickTexture(ctx, wx, wy, ww, wh, frameWidth) {
+        ctx.save();
+        ctx.globalAlpha = 0.3;
+
+        // 绘制砖块线条
+        ctx.strokeStyle = '#2a2520';
+        ctx.lineWidth = 1;
+
+        const brickHeight = 20;
+        const brickWidth = 40;
+
+        // 左边框砖块
+        for (let y = wy + wh * 0.4; y < window.innerHeight; y += brickHeight) {
+            ctx.strokeRect(wx - frameWidth, y, frameWidth, brickHeight);
+        }
+
+        // 右边框砖块
+        for (let y = wy + wh * 0.4; y < window.innerHeight; y += brickHeight) {
+            ctx.strokeRect(wx + ww, y, frameWidth, brickHeight);
+        }
+
+        ctx.restore();
+    }
+
+    function drawVines(ctx, wx, wy, ww, wh, time) {
+        ctx.save();
+
+        const vineColor = `rgba(45, 80, 45, ${0.7 + currentLevel * 0.03})`;
+
+        // 左侧藤蔓
+        ctx.strokeStyle = vineColor;
+        ctx.lineWidth = 4;
+        ctx.lineCap = 'round';
+
+        ctx.beginPath();
+        ctx.moveTo(wx + 10, wy + wh * 0.5);
+        for (let i = 0; i < 80; i++) {
+            const x = wx + 10 + Math.sin(i * 0.15 + time * 0.001) * 8;
+            const y = wy + wh * 0.5 + i * 2;
+            ctx.lineTo(x, y);
+        }
+        ctx.stroke();
+
+        // 右侧藤蔓
+        ctx.beginPath();
+        ctx.moveTo(wx + ww - 10, wy + wh * 0.5);
+        for (let i = 0; i < 80; i++) {
+            const x = wx + ww - 10 + Math.sin(i * 0.15 + time * 0.001 + 1) * 8;
+            const y = wy + wh * 0.5 + i * 2;
+            ctx.lineTo(x, y);
+        }
+        ctx.stroke();
+
+        // 添加叶子
+        const leafPositions = [0.2, 0.4, 0.6, 0.8];
+        leafPositions.forEach((pos, idx) => {
+            const leafY = wy + wh * 0.5 + pos * 160;
+            const sway = Math.sin(time * 0.002 + idx) * 3;
+
+            // 左边叶子
+            drawLeaf(ctx, wx + 15 + sway, leafY, 0.6);
+            // 右边叶子
+            drawLeaf(ctx, wx + ww - 15 + sway, leafY, -0.6);
+        });
+
+        // 光晕装饰
+        const glowGradient = ctx.createRadialGradient(wx + ww/2, wy, 0, wx + ww/2, wy, 150);
+        glowGradient.addColorStop(0, `rgba(255, 220, 150, ${0.2 + Math.sin(time * 0.002) * 0.1})`);
+        glowGradient.addColorStop(1, 'rgba(255, 220, 150, 0)');
+        ctx.fillStyle = glowGradient;
+        ctx.fillRect(wx, wy, ww, 150);
+
+        ctx.restore();
+    }
+
+    function drawLeaf(ctx, x, y, rotation) {
+        ctx.save();
+        ctx.translate(x, y);
+        ctx.rotate(rotation);
+
+        ctx.fillStyle = 'rgba(60, 100, 50, 0.8)';
+        ctx.beginPath();
+        ctx.moveTo(0, 0);
+        ctx.quadraticCurveTo(8, -5, 15, 0);
+        ctx.quadraticCurveTo(8, 5, 0, 0);
+        ctx.fill();
+
+        ctx.restore();
+    }
+
+    // ============================================
+    // 绘制函数集 - 景色层
+    // ============================================
+    function drawLevel(ctx, w, h, time) {
+        switch(currentLevel) {
+            case 0: drawCrystalCave(ctx, w, h, time); break;
+            case 1: drawIceField(ctx, w, h, time); break;
+            case 2: drawOcean(ctx, w, h, time); break;
+            case 3: drawBeach(ctx, w, h, time); break;
+            case 4: drawGrassland(ctx, w, h, time); break;
+            case 5: drawFlowerField(ctx, w, h, time); break;
+            case 6: drawStarrySky(ctx, w, h, time); break;
+            case 7: drawCity(ctx, w, h, time); break;
+            case 8: drawSky(ctx, w, h, time); break;
+        }
+    }
+
+    // 1. 水晶洞穴
+    function drawCrystalCave(ctx, w, h, time) {
+        // 洞穴背景
+        const gradient = ctx.createRadialGradient(w/2, h/2, 0, w/2, h/2, w * 0.8);
+        gradient.addColorStop(0, '#1a0a2e');
+        gradient.addColorStop(0.5, '#0d0520');
+        gradient.addColorStop(1, '#050210');
+        ctx.fillStyle = gradient;
+        ctx.fillRect(0, 0, w, h);
+
+        // 水晶簇
+        const crystalPositions = [
+            {x: w * 0.1, y: h * 0.8, size: 80, color: '#9b59b6'},
+            {x: w * 0.25, y: h * 0.85, size: 100, color: '#8e44ad'},
+            {x: w * 0.4, y: h * 0.9, size: 60, color: '#a855f7'},
+            {x: w * 0.6, y: h * 0.85, size: 90, color: '#7c3aed'},
+            {x: w * 0.75, y: h * 0.88, size: 70, color: '#c084fc'},
+            {x: w * 0.9, y: h * 0.82, size: 85, color: '#9333ea'}
+        ];
+
+        crystalPositions.forEach((crystal, idx) => {
+            drawCrystal(ctx, crystal.x, crystal.y, crystal.size, crystal.color, time, idx);
+        });
+
+        // 漂浮光点
+        for (let i = 0; i < 40; i++) {
+            const x = (Math.sin(time * 0.0003 + i * 0.5) * 0.5 + 0.5) * w;
+            const y = (Math.cos(time * 0.0004 + i * 0.3) * 0.5 + 0.5) * h;
+            const size = Math.sin(time * 0.002 + i) * 2 + 3;
+            const hue = (time * 0.01 + i * 20) % 360;
+
+            ctx.beginPath();
+            ctx.arc(x, y, size, 0, Math.PI * 2);
+            ctx.fillStyle = `hsla(${hue}, 80%, 70%, ${0.5 + Math.sin(time * 0.003 + i) * 0.3})`;
+            ctx.fill();
+
+            // 光晕
+            const glow = ctx.createRadialGradient(x, y, 0, x, y, size * 4);
+            glow.addColorStop(0, `hsla(${hue}, 80%, 70%, 0.3)`);
+            glow.addColorStop(1, 'transparent');
+            ctx.fillStyle = glow;
+            ctx.fillRect(x - size * 4, y - size * 4, size * 8, size * 8);
+        }
+    }
+
+    function drawCrystal(ctx, x, y, size, color, time, idx) {
+        ctx.save();
+
+        const shimmer = Math.sin(time * 0.002 + idx) * 0.2 + 0.8;
+
+        for (let i = 0; i < 5; i++) {
+            const angle = (i / 5) * Math.PI - Math.PI / 2;
+            const height = size * (0.8 + Math.random() * 0.4);
+            const width = size * 0.15;
+
+            ctx.beginPath();
+            ctx.moveTo(x + i * 12, y);
+            ctx.lineTo(x + i * 12 - width, y - height * 0.3);
+            ctx.lineTo(x + i * 12, y - height);
+            ctx.lineTo(x + i * 12 + width, y - height * 0.3);
+            ctx.closePath();
+
+            const crystalGrad = ctx.createLinearGradient(x, y, x, y - height);
+            crystalGrad.addColorStop(0, color);
+            crystalGrad.addColorStop(0.5, `rgba(255, 255, 255, ${0.3 * shimmer})`);
+            crystalGrad.addColorStop(1, color);
+            ctx.fillStyle = crystalGrad;
+            ctx.fill();
+
+            ctx.strokeStyle = `rgba(255, 255, 255, ${0.5 * shimmer})`;
+            ctx.lineWidth = 1;
+            ctx.stroke();
+        }
+
+        ctx.restore();
+    }
+
+    // 2. 冰原
+    function drawIceField(ctx, w, h, time) {
+        // 天空渐变
+        const skyGrad = ctx.createLinearGradient(0, 0, 0, h);
+        skyGrad.addColorStop(0, '#0c1445');
+        skyGrad.addColorStop(0.4, '#1a237e');
+        skyGrad.addColorStop(1, '#4a148c');
+        ctx.fillStyle = skyGrad;
+        ctx.fillRect(0, 0, w, h);
+
+        // 极光
+        drawAurora(ctx, w, h, time);
+
+        // 冰川
+        ctx.fillStyle = '#e8f4f8';
+        ctx.beginPath();
+        ctx.moveTo(0, h * 0.6);
+        ctx.lineTo(w * 0.15, h * 0.45);
+        ctx.lineTo(w * 0.25, h * 0.5);
+        ctx.lineTo(w * 0.35, h * 0.4);
+        ctx.lineTo(w * 0.5, h * 0.55);
+        ctx.lineTo(w * 0.65, h * 0.42);
+        ctx.lineTo(w * 0.8, h * 0.48);
+        ctx.lineTo(w * 0.9, h * 0.38);
+        ctx.lineTo(w, h * 0.5);
+        ctx.lineTo(w, h * 0.6);
+        ctx.closePath();
+        ctx.fill();
+
+        // 冰原地面
+        const iceGrad = ctx.createLinearGradient(0, h * 0.6, 0, h);
+        iceGrad.addColorStop(0, '#d4e5f7');
+        iceGrad.addColorStop(1, '#a8c5dc');
+        ctx.fillStyle = iceGrad;
+        ctx.fillRect(0, h * 0.6, w, h * 0.4);
+
+        // 发光雪花
+        for (let i = 0; i < 60; i++) {
+            const x = (i * 37 + time * 0.02) % w;
+            const y = (i * 23 + time * 0.03) % h;
+            const size = Math.sin(time * 0.001 + i) * 1.5 + 2;
+            const opacity = 0.6 + Math.sin(time * 0.002 + i * 0.5) * 0.4;
+
+            ctx.beginPath();
+            ctx.arc(x, y, size, 0, Math.PI * 2);
+            ctx.fillStyle = `rgba(255, 255, 255, ${opacity})`;
+            ctx.fill();
+
+            // 发光效果
+            ctx.beginPath();
+            ctx.arc(x, y, size * 3, 0, Math.PI * 2);
+            const glow = ctx.createRadialGradient(x, y, 0, x, y, size * 3);
+            glow.addColorStop(0, `rgba(200, 230, 255, ${opacity * 0.3})`);
+            glow.addColorStop(1, 'transparent');
+            ctx.fillStyle = glow;
+            ctx.fill();
+        }
+    }
+
+    function drawAurora(ctx, w, h, time) {
+        ctx.save();
+        ctx.globalCompositeOperation = 'lighter';
+
+        const colors = ['#00ff88', '#00ffcc', '#ff00ff', '#00ccff'];
+
+        for (let i = 0; i < 4; i++) {
+            ctx.beginPath();
+            ctx.moveTo(0, h * 0.2 + i * 20);
+
+            for (let x = 0; x <= w; x += 10) {
+                const y = h * 0.2 + Math.sin(x * 0.005 + time * 0.001 + i) * 50 + i * 20;
+                ctx.lineTo(x, y);
+            }
+
+            ctx.lineTo(w, 0);
+            ctx.lineTo(0, 0);
+            ctx.closePath();
+
+            const grad = ctx.createLinearGradient(0, 0, 0, h * 0.4);
+            grad.addColorStop(0, 'transparent');
+            grad.addColorStop(0.5, colors[i]);
+            grad.addColorStop(1, 'transparent');
+            ctx.fillStyle = grad;
+            ctx.globalAlpha = 0.15;
+            ctx.fill();
+        }
+
+        ctx.restore();
+    }
+
+    // 3. 大海
+    function drawOcean(ctx, w, h, time) {
+        // 夕阳天空
+        const skyGrad = ctx.createLinearGradient(0, 0, 0, h * 0.6);
+        skyGrad.addColorStop(0, '#ff6b6b');
+        skyGrad.addColorStop(0.3, '#ffa07a');
+        skyGrad.addColorStop(0.6, '#ffcc99');
+        skyGrad.addColorStop(1, '#ffe4b5');
+        ctx.fillStyle = skyGrad;
+        ctx.fillRect(0, 0, w, h * 0.6);
+
+        // 太阳
+        const sunX = w * 0.7;
+        const sunY = h * 0.35;
+        const sunGrad = ctx.createRadialGradient(sunX, sunY, 0, sunX, sunY, 80);
+        sunGrad.addColorStop(0, 'rgba(255, 255, 200, 1)');
+        sunGrad.addColorStop(0.5, 'rgba(255, 200, 100, 0.8)');
+        sunGrad.addColorStop(1, 'rgba(255, 150, 50, 0)');
+        ctx.fillStyle = sunGrad;
+        ctx.beginPath();
+        ctx.arc(sunX, sunY, 60, 0, Math.PI * 2);
+        ctx.fill();
+
+        // 海面
+        drawWaves(ctx, w, h, time);
+
+        // 海鸥
+        for (let i = 0; i < 5; i++) {
+            const birdX = w * 0.2 + i * w * 0.15 + Math.sin(time * 0.001 + i) * 20;
+            const birdY = h * 0.2 + i * 15 + Math.sin(time * 0.002 + i * 2) * 10;
+            drawSeagull(ctx, birdX, birdY, 15);
+        }
+    }
+
+    function drawWaves(ctx, w, h, time) {
+        const horizon = h * 0.5;
+
+        for (let layer = 0; layer < 5; layer++) {
+            const y = horizon + layer * 25;
+            const darkness = layer * 0.1;
+
+            ctx.beginPath();
+            ctx.moveTo(0, y + 100);
+
+            for (let x = 0; x <= w; x += 5) {
+                const waveY = y + Math.sin(x * 0.01 + time * 0.002 + layer) * (10 - layer * 2)
+                            + Math.sin(x * 0.02 + time * 0.003) * 5;
+                ctx.lineTo(x, waveY);
+            }
+
+            ctx.lineTo(w, h);
+            ctx.lineTo(0, h);
+            ctx.closePath();
+
+            const waveGrad = ctx.createLinearGradient(0, y, 0, h);
+            waveGrad.addColorStop(0, `rgba(70, 130, 180, ${0.7 - darkness})`);
+            waveGrad.addColorStop(1, `rgba(30, 60, 100, ${0.9 - darkness})`);
+            ctx.fillStyle = waveGrad;
+            ctx.fill();
+        }
+
+        // 波光
+        for (let i = 0; i < 30; i++) {
+            const x = Math.random() * w;
+            const y = horizon + Math.random() * h * 0.4;
+            const sparkle = Math.sin(time * 0.005 + i) > 0.7;
+
+            if (sparkle) {
+                ctx.fillStyle = 'rgba(255, 255, 200, 0.8)';
+                ctx.fillRect(x, y, 3, 2);
+            }
+        }
+    }
+
+    function drawSeagull(ctx, x, y, size) {
+        ctx.save();
+        ctx.strokeStyle = '#333';
+        ctx.lineWidth = 2;
+        ctx.lineCap = 'round';
+
+        ctx.beginPath();
+        ctx.moveTo(x - size, y + size * 0.3);
+        ctx.quadraticCurveTo(x - size * 0.5, y - size * 0.3, x, y);
+        ctx.quadraticCurveTo(x + size * 0.5, y - size * 0.3, x + size, y + size * 0.3);
+        ctx.stroke();
+
+        ctx.restore();
+    }
+
+    // 4. 沙滩
+    function drawBeach(ctx, w, h, time) {
+        // 天空
+        const skyGrad = ctx.createLinearGradient(0, 0, 0, h * 0.5);
+        skyGrad.addColorStop(0, '#87ceeb');
+        skyGrad.addColorStop(1, '#b0e0e6');
+        ctx.fillStyle = skyGrad;
+        ctx.fillRect(0, 0, w, h * 0.5);
+
+        // 海
+        const seaGrad = ctx.createLinearGradient(0, h * 0.4, 0, h * 0.6);
+        seaGrad.addColorStop(0, '#40e0d0');
+        seaGrad.addColorStop(1, '#20b2aa');
+        ctx.fillStyle = seaGrad;
+        ctx.fillRect(0, h * 0.4, w, h * 0.2);
+
+        // 简单波浪线
+        ctx.strokeStyle = 'rgba(255, 255, 255, 0.6)';
+        ctx.lineWidth = 2;
+        for (let i = 0; i < 3; i++) {
+            ctx.beginPath();
+            for (let x = 0; x <= w; x += 10) {
+                const y = h * 0.45 + i * 20 + Math.sin(x * 0.02 + time * 0.002 + i) * 8;
+                if (x === 0) ctx.moveTo(x, y);
+                else ctx.lineTo(x, y);
+            }
+            ctx.stroke();
+        }
+
+        // 沙滩
+        const sandGrad = ctx.createLinearGradient(0, h * 0.55, 0, h);
+        sandGrad.addColorStop(0, '#f4e4bc');
+        sandGrad.addColorStop(1, '#e6d5a8');
+        ctx.fillStyle = sandGrad;
+        ctx.fillRect(0, h * 0.55, w, h * 0.45);
+
+        // 脚印
+        ctx.fillStyle = 'rgba(200, 180, 140, 0.5)';
+        for (let i = 0; i < 8; i++) {
+            const footX = w * 0.3 + i * 30;
+            const footY = h * 0.7 + Math.sin(i * 0.5) * 10;
+            const leftRight = i % 2 === 0 ? -5 : 5;
+
+            ctx.beginPath();
+            ctx.ellipse(footX + leftRight, footY, 8, 12, Math.PI * 0.1, 0, Math.PI * 2);
+            ctx.fill();
+        }
+
+        // 海浪泡沫
+        for (let x = 0; x < w; x += 8) {
+            const foamY = h * 0.55 + Math.sin(x * 0.03 + time * 0.003) * 5;
+            const opacity = Math.max(0, Math.sin(time * 0.002 + x * 0.01));
+
+            ctx.fillStyle = `rgba(255, 255, 255, ${opacity * 0.6})`;
+            ctx.fillRect(x, foamY, 6, 3);
+        }
+    }
+
+    // 5. 草原
+    function drawGrassland(ctx, w, h, time) {
+        // 天空
+        const skyGrad = ctx.createLinearGradient(0, 0, 0, h * 0.5);
+        skyGrad.addColorStop(0, '#87ceeb');
+        skyGrad.addColorStop(1, '#c8e6f5');
+        ctx.fillStyle = skyGrad;
+        ctx.fillRect(0, 0, w, h);
+
+        // 阳光光柱
+        ctx.save();
+        ctx.globalAlpha = 0.3;
+        for (let i = 0; i < 5; i++) {
+            const x = w * 0.2 + i * w * 0.15;
+            const grad = ctx.createLinearGradient(x, 0, x, h);
+            grad.addColorStop(0, 'rgba(255, 250, 200, 0.8)');
+            grad.addColorStop(1, 'transparent');
+            ctx.fillStyle = grad;
+            ctx.fillRect(x - 15, 0, 30, h);
+        }
+        ctx.restore();
+
+        // 远山
+        ctx.fillStyle = '#90b07a';
+        ctx.beginPath();
+        ctx.moveTo(0, h * 0.45);
+        for (let x = 0; x <= w; x += 20) {
+            const y = h * 0.4 + Math.sin(x * 0.005) * 30 + Math.sin(x * 0.01) * 15;
+            ctx.lineTo(x, y);
+        }
+        ctx.lineTo(w, h * 0.5);
+        ctx.lineTo(w, h);
+        ctx.lineTo(0, h);
+        ctx.closePath();
+        ctx.fill();
+
+        // 草地
+        const grassGrad = ctx.createLinearGradient(0, h * 0.5, 0, h);
+        grassGrad.addColorStop(0, '#7cb342');
+        grassGrad.addColorStop(1, '#558b2f');
+        ctx.fillStyle = grassGrad;
+        ctx.fillRect(0, h * 0.5, w, h * 0.5);
+
+        // 草波
+        ctx.strokeStyle = 'rgba(100, 150, 50, 0.5)';
+        ctx.lineWidth = 2;
+        for (let y = h * 0.55; y < h; y += 30) {
+            ctx.beginPath();
+            for (let x = 0; x <= w; x += 10) {
+                const waveY = y + Math.sin(x * 0.02 + time * 0.002 + y * 0.01) * 15;
+                if (x === 0) ctx.moveTo(x, waveY);
+                else ctx.lineTo(x, waveY);
+            }
+            ctx.stroke();
+        }
+
+        // 蒲公英
+        for (let i = 0; i < 15; i++) {
+            const x = w * 0.1 + (i * 47) % (w * 0.8);
+            const y = h * 0.3 + Math.sin(time * 0.001 + i) * 30 + (i % 5) * 20;
+            drawDandelion(ctx, x, y, time + i * 100);
+        }
+    }
+
+    function drawDandelion(ctx, x, y, time) {
+        ctx.save();
+
+        // 茎
+        ctx.strokeStyle = 'rgba(150, 200, 100, 0.8)';
+        ctx.lineWidth = 1;
+        ctx.beginPath();
+        ctx.moveTo(x, y);
+        ctx.lineTo(x + Math.sin(time * 0.001) * 3, y + 30);
+        ctx.stroke();
+
+        // 种子伞
+        for (let i = 0; i < 12; i++) {
+            const angle = (i / 12) * Math.PI * 2;
+            const length = 8 + Math.sin(time * 0.003 + i) * 2;
+            const endX = x + Math.cos(angle) * length;
+            const endY = y + Math.sin(angle) * length;
+
+            ctx.strokeStyle = 'rgba(255, 255, 255, 0.9)';
+            ctx.beginPath();
+            ctx.moveTo(x, y);
+            ctx.lineTo(endX, endY);
+            ctx.stroke();
+
+            // 小伞毛
+            ctx.beginPath();
+            ctx.arc(endX, endY, 2, 0, Math.PI);
+            ctx.stroke();
+        }
+
+        ctx.restore();
+    }
+
+    // 6. 花海
+    function drawFlowerField(ctx, w, h, time) {
+        // 天空
+        const skyGrad = ctx.createLinearGradient(0, 0, 0, h * 0.4);
+        skyGrad.addColorStop(0, '#87ceeb');
+        skyGrad.addColorStop(1, '#fff5e6');
+        ctx.fillStyle = skyGrad;
+        ctx.fillRect(0, 0, w, h);
+
+        // 云隙光
+        ctx.save();
+        ctx.globalAlpha = 0.4;
+        for (let i = 0; i < 3; i++) {
+            const cx = w * 0.3 + i * w * 0.2;
+            const grad = ctx.createRadialGradient(cx, 0, 0, cx, h * 0.5, 200);
+            grad.addColorStop(0, 'rgba(255, 250, 200, 0.6)');
+            grad.addColorStop(1, 'transparent');
+            ctx.fillStyle = grad;
+            ctx.fillRect(0, 0, w, h * 0.6);
+        }
+        ctx.restore();
+
+        // 花田背景
+        const fieldGrad = ctx.createLinearGradient(0, h * 0.4, 0, h);
+        fieldGrad.addColorStop(0, '#98d8a0');
+        fieldGrad.addColorStop(0.5, '#f8b4d9');
+        fieldGrad.addColorStop(1, '#e8a0c8');
+        ctx.fillStyle = fieldGrad;
+        ctx.fillRect(0, h * 0.4, w, h * 0.6);
+
+        // 花朵
+        const flowerColors = ['#ff69b4', '#ff1493', '#ffb6c1', '#ff6347', '#ffa500', '#ffff00', '#9370db'];
+
+        for (let i = 0; i < 80; i++) {
+            const x = (i * 47) % w;
+            const y = h * 0.45 + (i * 31) % (h * 0.5);
+            const size = 5 + (i % 5) * 2;
+            const color = flowerColors[i % flowerColors.length];
+            const sway = Math.sin(time * 0.002 + i * 0.5) * 3;
+
+            drawFlower(ctx, x + sway, y, size, color);
+        }
+
+        // 蝴蝶
+        for (let i = 0; i < 8; i++) {
+            const bx = w * 0.2 + Math.sin(time * 0.001 + i * 2) * w * 0.3 + (i * 50) % (w * 0.5);
+            const by = h * 0.3 + Math.cos(time * 0.0015 + i * 3) * 50 + i * 20;
+            drawButterfly(ctx, bx, by, time + i * 500);
+        }
+    }
+
+    function drawFlower(ctx, x, y, size, color) {
+        ctx.save();
+
+        // 花瓣
+        const petalCount = 5;
+        for (let i = 0; i < petalCount; i++) {
+            const angle = (i / petalCount) * Math.PI * 2;
+            ctx.fillStyle = color;
+            ctx.beginPath();
+            ctx.ellipse(
+                x + Math.cos(angle) * size * 0.5,
+                y + Math.sin(angle) * size * 0.5,
+                size * 0.6, size * 0.4,
+                angle, 0, Math.PI * 2
+            );
+            ctx.fill();
+        }
+
+        // 花心
+        ctx.fillStyle = '#ffd700';
+        ctx.beginPath();
+        ctx.arc(x, y, size * 0.3, 0, Math.PI * 2);
+        ctx.fill();
+
+        ctx.restore();
+    }
+
+    function drawButterfly(ctx, x, y, time) {
+        ctx.save();
+
+        const wingAngle = Math.sin(time * 0.01) * 0.5;
+        const wingColor = `hsl(${(time * 0.01) % 360}, 70%, 60%)`;
+
+        // 左翅
+        ctx.save();
+        ctx.translate(x, y);
+        ctx.rotate(-wingAngle);
+        ctx.fillStyle = wingColor;
+        ctx.beginPath();
+        ctx.ellipse(-10, 0, 12, 8, -0.3, 0, Math.PI * 2);
+        ctx.fill();
+        ctx.restore();
+
+        // 右翅
+        ctx.save();
+        ctx.translate(x, y);
+        ctx.rotate(wingAngle);
+        ctx.fillStyle = wingColor;
+        ctx.beginPath();
+        ctx.ellipse(10, 0, 12, 8, 0.3, 0, Math.PI * 2);
+        ctx.fill();
+        ctx.restore();
+
+        // 身体
+        ctx.fillStyle = '#333';
+        ctx.beginPath();
+        ctx.ellipse(x, y, 2, 8, 0, 0, Math.PI * 2);
+        ctx.fill();
+
+        ctx.restore();
+    }
+
+    // 7. 星空
+    function drawStarrySky(ctx, w, h, time) {
+        // 深空背景
+        const skyGrad = ctx.createRadialGradient(w/2, h/2, 0, w/2, h/2, w);
+        skyGrad.addColorStop(0, '#0a0a20');
+        skyGrad.addColorStop(0.5, '#050515');
+        skyGrad.addColorStop(1, '#000005');
+        ctx.fillStyle = skyGrad;
+        ctx.fillRect(0, 0, w, h);
+
+        // 星云
+        ctx.save();
+        ctx.globalAlpha = 0.15;
+
+        const nebulaGrad = ctx.createRadialGradient(w * 0.3, h * 0.4, 0, w * 0.3, h * 0.4, 200);
+        nebulaGrad.addColorStop(0, '#8b5cf6');
+        nebulaGrad.addColorStop(1, 'transparent');
+        ctx.fillStyle = nebulaGrad;
+        ctx.fillRect(0, 0, w, h);
+
+        const nebula2 = ctx.createRadialGradient(w * 0.7, h * 0.6, 0, w * 0.7, h * 0.6, 150);
+        nebula2.addColorStop(0, '#ec4899');
+        nebula2.addColorStop(1, 'transparent');
+        ctx.fillStyle = nebula2;
+        ctx.fillRect(0, 0, w, h);
+        ctx.restore();
+
+        // 银河
+        ctx.save();
+        ctx.globalAlpha = 0.2;
+        ctx.translate(w/2, h/2);
+        ctx.rotate(time * 0.00005);
+
+        for (let i = 0; i < 200; i++) {
+            const dist = Math.random() * Math.max(w, h) * 0.6;
+            const angle = Math.random() * Math.PI * 2;
+            const x = Math.cos(angle) * dist;
+            const y = Math.sin(angle) * dist * 0.3;
+
+            ctx.fillStyle = `rgba(255, 255, 255, ${Math.random() * 0.5})`;
+            ctx.beginPath();
+            ctx.arc(x, y, Math.random() * 1.5, 0, Math.PI * 2);
+            ctx.fill();
+        }
+        ctx.restore();
+
+        // 星星
+        for (let i = 0; i < 150; i++) {
+            const x = (i * 97 + 13) % w;
+            const y = (i * 61 + 17) % h;
+            const twinkle = Math.sin(time * 0.003 + i * 0.7);
+            const size = 0.5 + twinkle * 0.5 + 1;
+            const opacity = 0.5 + twinkle * 0.5;
+
+            ctx.beginPath();
+            ctx.arc(x, y, size, 0, Math.PI * 2);
+            ctx.fillStyle = `rgba(255, 255, 255, ${opacity})`;
+            ctx.fill();
+        }
+
+        // 流星
+        if (Math.random() < 0.02) {
+            const mx = Math.random() * w;
+            const my = Math.random() * h * 0.5;
+            const angle = Math.PI * 0.2;
+
+            ctx.save();
+            ctx.strokeStyle = 'rgba(255, 255, 255, 0.8)';
+            ctx.lineWidth = 2;
+            ctx.beginPath();
+            ctx.moveTo(mx, my);
+            ctx.lineTo(mx + Math.cos(angle) * 100, my + Math.sin(angle) * 100);
+            ctx.stroke();
+            ctx.restore();
+        }
+    }
+
+    // 8. 城市
+    function drawCity(ctx, w, h, time) {
+        // 夜空
+        const skyGrad = ctx.createLinearGradient(0, 0, 0, h);
+        skyGrad.addColorStop(0, '#0f0f2d');
+        skyGrad.addColorStop(1, '#1a1a3d');
+        ctx.fillStyle = skyGrad;
+        ctx.fillRect(0, 0, w, h);
+
+        // 星星
+        for (let i = 0; i < 50; i++) {
+            const x = (i * 73 + 11) % w;
+            const y = (i * 37 + 7) % (h * 0.4);
+            const twinkle = Math.sin(time * 0.003 + i);
+
+            ctx.beginPath();
+            ctx.arc(x, y, 1 + twinkle * 0.5, 0, Math.PI * 2);
+            ctx.fillStyle = `rgba(255, 255, 255, ${0.5 + twinkle * 0.3})`;
+            ctx.fill();
+        }
+
+        // 建筑群
+        const buildings = [
+            {x: 0, width: 60, height: 0.5},
+            {x: 55, width: 50, height: 0.6},
+            {x: 100, width: 70, height: 0.45},
+            {x: 165, width: 55, height: 0.7},
+            {x: 215, width: 80, height: 0.55},
+            {x: 290, width: 45, height: 0.75},
+            {x: 330, width: 65, height: 0.5},
+            {x: 390, width: 75, height: 0.65},
+            {x: 460, width: 50, height: 0.8},
+            {x: 505, width: 60, height: 0.5}
+        ];
+
+        buildings.forEach((b, idx) => {
+            const bx = (b.x / 560) * w;
+            const bw = (b.width / 560) * w;
+            const bh = h * b.height;
+
+            // 建筑主体
+            ctx.fillStyle = '#1a1a2e';
+            ctx.fillRect(bx, h - bh, bw, bh);
+
+            // 窗户
+            const windowColor = `rgba(255, 220, 150, ${0.6 + Math.sin(time * 0.001 + idx) * 0.3})`;
+            ctx.fillStyle = windowColor;
+
+            for (let wy = h - bh + 20; wy < h - 20; wy += 25) {
+                for (let wx = bx + 10; wx < bx + bw - 15; wx += 20) {
+                    if (Math.random() > 0.2) {
+                        ctx.fillRect(wx, wy, 8, 12);
+                    }
+                }
+            }
+        });
+
+        // 河流
+        ctx.fillStyle = 'rgba(30, 40, 60, 0.8)';
+        ctx.fillRect(0, h * 0.85, w, h * 0.15);
+
+        // 河面倒影
+        ctx.save();
+        ctx.globalAlpha = 0.3;
+        ctx.scale(1, -1);
+        ctx.translate(0, -h * 1.7);
+
+        buildings.forEach((b, idx) => {
+            const bx = (b.x / 560) * w;
+            const bw = (b.width / 560) * w;
+            const bh = h * b.height * 0.3;
+
+            const reflectGrad = ctx.createLinearGradient(0, h * 0.85, 0, h);
+            reflectGrad.addColorStop(0, 'rgba(255, 200, 100, 0.4)');
+            reflectGrad.addColorStop(1, 'transparent');
+            ctx.fillStyle = reflectGrad;
+            ctx.fillRect(bx, h * 0.85, bw, bh);
+        });
+
+        ctx.restore();
+
+        // 烟花
+        drawFireworks(ctx, w, h, time);
+    }
+
+    function drawFireworks(ctx, w, h, time) {
+        const fireworkTimes = [0, 2000, 3500, 5000];
+        const fireworkPositions = [
+            {x: w * 0.3, y: h * 0.25},
+            {x: w * 0.7, y: h * 0.2},
+            {x: w * 0.5, y: h * 0.3},
+            {x: w * 0.8, y: h * 0.15}
+        ];
+
+        fireworkTimes.forEach((ft, idx) => {
+            const elapsed = (time % 6000) - ft;
+
+            if (elapsed > 0 && elapsed < 1500) {
+                const progress = elapsed / 1500;
+                const pos = fireworkPositions[idx];
+                const colors = ['#ff6b6b', '#ffd93d', '#6bcb77', '#4d96ff', '#ff6b9d'];
+
+                for (let i = 0; i < 20; i++) {
+                    const angle = (i / 20) * Math.PI * 2;
+                    const dist = progress * 80;
+                    const px = pos.x + Math.cos(angle) * dist;
+                    const py = pos.y + Math.sin(angle) * dist + progress * 30;
+                    const opacity = 1 - progress;
+
+                    ctx.beginPath();
+                    ctx.arc(px, py, 3 * (1 - progress * 0.5), 0, Math.PI * 2);
+                    ctx.fillStyle = colors[idx % colors.length].replace(')', `, ${opacity})`).replace('rgb', 'rgba').replace('#', '');
+
+                    const hexColor = colors[idx % colors.length];
+                    const r = parseInt(hexColor.slice(1, 3), 16);
+                    const g = parseInt(hexColor.slice(3, 5), 16);
+                    const b = parseInt(hexColor.slice(5, 7), 16);
+                    ctx.fillStyle = `rgba(${r}, ${g}, ${b}, ${opacity})`;
+                    ctx.fill();
+                }
+            }
+        });
+    }
+
+    // 9. 天空（塔顶）
+    function drawSky(ctx, w, h, time) {
+        // 广阔天空
+        const skyGrad = ctx.createLinearGradient(0, 0, 0, h);
+        skyGrad.addColorStop(0, '#1e90ff');
+        skyGrad.addColorStop(0.3, '#4aa8ff');
+        skyGrad.addColorStop(0.6, '#87ceeb');
+        skyGrad.addColorStop(1, '#b0e0e6');
+        ctx.fillStyle = skyGrad;
+        ctx.fillRect(0, 0, w, h);
+
+        // 金色阳光
+        const sunGrad = ctx.createRadialGradient(w * 0.5, h * 0.2, 0, w * 0.5, h * 0.2, w * 0.6);
+        sunGrad.addColorStop(0, 'rgba(255, 250, 200, 0.9)');
+        sunGrad.addColorStop(0.3, 'rgba(255, 220, 150, 0.5)');
+        sunGrad.addColorStop(1, 'transparent');
+        ctx.fillStyle = sunGrad;
+        ctx.fillRect(0, 0, w, h);
+
+        // 白云
+        for (let i = 0; i < 8; i++) {
+            const cx = ((i * 200 + time * 0.01) % (w + 300)) - 150;
+            const cy = h * 0.15 + i * 40;
+            drawCloud(ctx, cx, cy, 60 + i * 10);
+        }
+
+        // 圣洁光晕
+        ctx.save();
+        const haloGrad = ctx.createRadialGradient(w/2, h * 0.3, 0, w/2, h * 0.3, 300);
+        haloGrad.addColorStop(0, `rgba(255, 255, 200, ${0.3 + Math.sin(time * 0.002) * 0.1})`);
+        haloGrad.addColorStop(0.5, 'rgba(255, 250, 220, 0.1)');
+        haloGrad.addColorStop(1, 'transparent');
+        ctx.fillStyle = haloGrad;
+        ctx.fillRect(0, 0, w, h);
+        ctx.restore();
+
+        // 飘落的花瓣
+        if (!levelParticles.length) {
+            for (let i = 0; i < 50; i++) {
+                levelParticles.push({
+                    x: Math.random() * w,
+                    y: Math.random() * h - h,
+                    size: Math.random() * 8 + 5,
+                    speedY: Math.random() * 1 + 0.5,
+                    speedX: Math.random() * 1 - 0.5,
+                    rotation: Math.random() * Math.PI * 2,
+                    rotSpeed: Math.random() * 0.02 - 0.01,
+                    color: ['#ffb6c1', '#ffc0cb', '#ff69b4', '#fff0f5'][Math.floor(Math.random() * 4)]
+                });
+            }
+        }
+
+        levelParticles.forEach(p => {
+            ctx.save();
+            ctx.translate(p.x, p.y);
+            ctx.rotate(p.rotation);
+
+            ctx.fillStyle = p.color;
+            ctx.beginPath();
+            ctx.moveTo(0, -p.size);
+            ctx.bezierCurveTo(p.size * 0.5, -p.size * 0.5, p.size * 0.5, p.size * 0.5, 0, p.size);
+            ctx.bezierCurveTo(-p.size * 0.5, p.size * 0.5, -p.size * 0.5, -p.size * 0.5, 0, -p.size);
+            ctx.fill();
+
+            ctx.restore();
+
+            p.y += p.speedY;
+            p.x += p.speedX + Math.sin(time * 0.001 + p.y * 0.01) * 0.3;
+            p.rotation += p.rotSpeed;
+
+            if (p.y > h + 20) {
+                p.y = -20;
+                p.x = Math.random() * w;
+            }
+        });
+    }
+
+    function drawCloud(ctx, x, y, size) {
+        ctx.save();
+        ctx.fillStyle = 'rgba(255, 255, 255, 0.9)';
+
+        const circles = [
+            {ox: 0, oy: 0, r: size * 0.6},
+            {ox: size * 0.5, oy: -size * 0.1, r: size * 0.5},
+            {ox: -size * 0.4, oy: size * 0.1, r: size * 0.45},
+            {ox: size * 0.3, oy: size * 0.2, r: size * 0.35},
+            {ox: -size * 0.2, oy: -size * 0.15, r: size * 0.4}
+        ];
+
+        circles.forEach(c => {
+            ctx.beginPath();
+            ctx.arc(x + c.ox, y + c.oy, c.r, 0, Math.PI * 2);
+            ctx.fill();
+        });
+
+        ctx.restore();
+    }
+
+    // ============================================
+    // 绘制全局背景（金色光点）
+    // ============================================
+    function drawBackground(ctx, w, h, time) {
+        ctx.clearRect(0, 0, w, h);
+
+        // 石质纹理背景
+        const gradient = ctx.createRadialGradient(w/2, h/2, 0, w/2, h/2, Math.max(w, h));
+        gradient.addColorStop(0, '#2d2640');
+        gradient.addColorStop(1, '#0f0a15');
+        ctx.fillStyle = gradient;
+        ctx.fillRect(0, 0, w, h);
+
+        // 金色光点
+        globalParticles.forEach(p => {
+            const twinkle = Math.sin(time * 0.003 + p.twinkle);
+            const opacity = p.opacity * (0.5 + twinkle * 0.5);
+
+            ctx.beginPath();
+            ctx.arc(p.x, p.y, p.size, 0, Math.PI * 2);
+            ctx.fillStyle = `rgba(255, 215, 150, ${opacity})`;
+            ctx.fill();
+
+            // 小光晕
+            const glow = ctx.createRadialGradient(p.x, p.y, 0, p.x, p.y, p.size * 3);
+            glow.addColorStop(0, `rgba(255, 200, 100, ${opacity * 0.3})`);
+            glow.addColorStop(1, 'transparent');
+            ctx.fillStyle = glow;
+            ctx.fillRect(p.x - p.size * 3, p.y - p.size * 3, p.size * 6, p.size * 6);
+
+            // 缓慢上升
+            p.y -= p.speedY;
+            if (p.y < -10) {
+                p.y = h + 10;
+                p.x = Math.random() * w;
+            }
+        });
+    }
+
+    // ============================================
+    // 过渡动画
+    // ============================================
+    function drawTransition(ctx, w, h, opacity) {
+        ctx.clearRect(0, 0, w, h);
+        ctx.fillStyle = `rgba(10, 5, 15, ${opacity})`;
+        ctx.fillRect(0, 0, w, h);
+    }
+
+    // ============================================
+    // 事件处理
+    // ============================================
+    function climbUp() {
+        if (isTransitioning || currentLevel >= CONFIG.levels.length - 1) return;
+
+        isTransitioning = true;
+        const startTime = Date.now();
+
+        // 淡出
+        function fadeOut() {
+            const elapsed = Date.now() - startTime;
+            const progress = Math.min(elapsed / (CONFIG.transitionDuration / 2), 1);
+
+            transitionOpacity = progress;
+            drawTransition(transCtx, transCanvas.width, transCanvas.height, transitionOpacity);
+
+            if (progress < 1) {
+                requestAnimationFrame(fadeOut);
+            } else {
+                // 切换层级
+                currentLevel++;
+                levelParticles = [];
+                levelIndicator.textContent = `第 ${currentLevel + 1} 层`;
+
+                // 淡入
+                fadeIn();
+
+                // 显示祝福语
+                showBlessing();
+
+                // 最后一层隐藏按钮
+                if (currentLevel >= CONFIG.levels.length - 1) {
+                    climbBtn.style.display = 'none';
+                    levelIndicator.style.display = 'none';
+                }
+            }
+        }
+
+        function fadeIn() {
+            const elapsed = Date.now() - startTime - CONFIG.transitionDuration / 2;
+            const progress = Math.min(elapsed / (CONFIG.transitionDuration / 2), 1);
+
+            transitionOpacity = 1 - progress;
+            drawTransition(transCtx, transCanvas.width, transCanvas.height, transitionOpacity);
+
+            if (progress < 1) {
+                requestAnimationFrame(fadeIn);
+            } else {
+                isTransitioning = false;
+            }
+        }
+
+        fadeOut();
+    }
+
+    function showBlessing() {
+        const blessing = CONFIG.levels[currentLevel].blessing;
+        blessingEl.textContent = blessing;
+        blessingEl.classList.add('show');
+
+        // 最终祝福语保持显示
+        if (currentLevel < CONFIG.levels.length - 1) {
+            setTimeout(() => {
+                blessingEl.classList.remove('show');
+            }, CONFIG.blessingShowDuration);
+        }
+    }
+
+    // ============================================
+    // 动画循环
+    // ============================================
+    function animate(timestamp) {
+        animationTime = timestamp;
+
+        const w = mainCanvas.width;
+        const h = mainCanvas.height;
+
+        // 绘制背景
+        drawBackground(bgCtx, w, h, animationTime);
+
+        // 绘制主场景
+        ctx.clearRect(0, 0, w, h);
+        drawStoneWindow(ctx, w, h, animationTime);
+
+        requestAnimationFrame(animate);
+    }
+
+    // ============================================
+    // 启动
+    // ============================================
+    init();
+
+    // 初始显示第一层祝福语
+    setTimeout(() => {
+        showBlessing();
+    }, 500);
+    </script>
+</body>
+</html>
