@@ -40,6 +40,7 @@
             top: 0;
             left: 0;
             z-index: 2;
+            transition: opacity 0.5s ease-in-out;
         }
 
         #transitionCanvas {
@@ -48,6 +49,16 @@
             left: 0;
             z-index: 3;
             pointer-events: none;
+            background: transparent;
+        }
+
+        #climbCanvas {
+            position: absolute;
+            top: 0;
+            left: 0;
+            z-index: 4;
+            pointer-events: none;
+            background: transparent;
         }
 
         #blessingText {
@@ -127,6 +138,7 @@
         <canvas id="bgCanvas"></canvas>
         <canvas id="mainCanvas"></canvas>
         <canvas id="transitionCanvas"></canvas>
+        <canvas id="climbCanvas"></canvas>
         <div id="levelIndicator">第 1 层</div>
         <div id="blessingText"></div>
         <button id="climbBtn">向上攀登</button>
@@ -137,7 +149,8 @@
     // 配置层
     // ============================================
     const CONFIG = {
-        transitionDuration: 1000,
+        transitionDuration: 3500,      // 爬塔动画总时长（毫秒）
+        climbStepDuration: 1200,       // 爬楼阶段时长
         blessingShowDuration: 4000,
         particleCount: 50,
         levels: [
@@ -189,14 +202,17 @@
     let globalParticles = [];
     let levelParticles = [];
     let transitionOpacity = 0;
+    let climbAnimationId = null;
 
     // Canvas 元素
     const bgCanvas = document.getElementById('bgCanvas');
     const mainCanvas = document.getElementById('mainCanvas');
     const transCanvas = document.getElementById('transitionCanvas');
+    const climbCanvas = document.getElementById('climbCanvas');
     const bgCtx = bgCanvas.getContext('2d');
     const ctx = mainCanvas.getContext('2d');
     const transCtx = transCanvas.getContext('2d');
+    const climbCtx = climbCanvas.getContext('2d');
 
     const blessingEl = document.getElementById('blessingText');
     const climbBtn = document.getElementById('climbBtn');
@@ -216,7 +232,7 @@
     function resizeCanvas() {
         const w = window.innerWidth;
         const h = window.innerHeight;
-        [bgCanvas, mainCanvas, transCanvas].forEach(c => {
+        [bgCanvas, mainCanvas, transCanvas, climbCanvas].forEach(c => {
             c.width = w;
             c.height = h;
         });
@@ -1292,32 +1308,364 @@
     }
 
     // ============================================
-    // 事件处理
+    // 第一人称爬塔动画
     // ============================================
-    function climbUp() {
-        if (isTransitioning || currentLevel >= CONFIG.levels.length - 1) return;
 
-        isTransitioning = true;
+    /**
+     * 绘制螺旋阶梯场景
+     * @param {CanvasRenderingContext2D} ctx - 画布上下文
+     * @param {number} w - 画布宽度
+     * @param {number} h - 画布高度
+     * @param {number} progress - 动画进度 (0-1)
+     * @param {number} phase - 动画阶段 (0:转身, 1:攀爬, 2:到达)
+     * @param {number} time - 时间戳
+     */
+    function drawSpiralStaircase(ctx, w, h, progress, phase, time) {
+        ctx.clearRect(0, 0, w, h);
+
+        // 根据阶段计算视角参数
+        let viewAngle = 0;      // 视角水平旋转角度
+        let viewHeight = 0;     // 视角高度偏移
+        let viewBob = 0;        // 行走起伏
+
+        if (phase === 0) {
+            // 阶段1：转身（面向阶梯）
+            viewAngle = progress * Math.PI * 0.5; // 向右转90度
+        } else if (phase === 1) {
+            // 阶段2：攀爬
+            viewAngle = Math.PI * 0.5; // 保持朝向阶梯
+            viewHeight = progress; // 上升
+            // 行走起伏 - 模拟踩台阶的节奏感
+            viewBob = Math.sin(progress * Math.PI * 8) * 0.02;
+        } else if (phase === 2) {
+            // 阶段3：到达（转回窗外）
+            viewAngle = Math.PI * 0.5 * (1 - progress); // 转回正面
+            viewHeight = 1;
+        }
+
+        ctx.save();
+
+        // 应用视角变换
+        ctx.translate(w / 2, h / 2);
+
+        // 绘制塔内环境
+        drawTowerInterior(ctx, w, h, viewAngle, viewHeight, viewBob, time);
+
+        ctx.restore();
+    }
+
+    /**
+     * 绘制塔内环境
+     */
+    function drawTowerInterior(ctx, w, h, angle, height, bob, time) {
+        const centerX = 0;
+        const centerY = 0;
+
+        // 背景色随高度变化（越往上越亮）
+        const brightness = 0.15 + height * 0.1;
+        const bgGrad = ctx.createRadialGradient(centerX, centerY, 0, centerX, centerY, Math.max(w, h) * 0.7);
+        bgGrad.addColorStop(0, `rgba(${45 + height * 20}, ${40 + height * 15}, ${60 + height * 10}, 1)`);
+        bgGrad.addColorStop(1, `rgba(${15 + height * 5}, ${10 + height * 5}, ${25 + height * 5}, 1)`);
+
+        ctx.fillStyle = bgGrad;
+        ctx.fillRect(-w, -h, w * 2, h * 2);
+
+        // 绘制螺旋阶梯
+        drawSpiralStairs(ctx, w, h, angle, height, bob, time);
+
+        // 绘制塔壁
+        drawTowerWalls(ctx, w, h, angle, height, time);
+
+        // 绘制台阶（第一人称视角可见的台阶）
+        drawVisibleSteps(ctx, w, h, angle, height, bob, time);
+
+        // 绘制光效和粒子
+        drawClimbParticles(ctx, w, h, height, time);
+    }
+
+    /**
+     * 绘制螺旋阶梯结构
+     */
+    function drawSpiralStairs(ctx, w, h, angle, height, bob, time) {
+        ctx.save();
+
+        // 中央柱子
+        const pillarRadius = Math.min(w, h) * 0.08;
+        const pillarGrad = ctx.createLinearGradient(-pillarRadius, 0, pillarRadius, 0);
+        pillarGrad.addColorStop(0, '#3d3530');
+        pillarGrad.addColorStop(0.5, '#5a5045');
+        pillarGrad.addColorStop(1, '#3d3530');
+
+        ctx.fillStyle = pillarGrad;
+        ctx.beginPath();
+        ctx.arc(0, 0, pillarRadius, 0, Math.PI * 2);
+        ctx.fill();
+
+        // 柱子纹理
+        ctx.strokeStyle = 'rgba(30, 25, 20, 0.5)';
+        ctx.lineWidth = 1;
+        for (let i = 0; i < 8; i++) {
+            const y = -pillarRadius + i * (pillarRadius * 2 / 8);
+            ctx.beginPath();
+            ctx.moveTo(-Math.sqrt(pillarRadius * pillarRadius - y * y), y);
+            ctx.lineTo(Math.sqrt(pillarRadius * pillarRadius - y * y), y);
+            ctx.stroke();
+        }
+
+        ctx.restore();
+    }
+
+    /**
+     * 绘制塔壁
+     */
+    function drawTowerWalls(ctx, w, h, angle, height, time) {
+        ctx.save();
+
+        const wallDist = Math.min(w, h) * 0.45;
+
+        // 根据视角绘制可见的墙壁部分
+        for (let i = 0; i < 12; i++) {
+            const wallAngle = (i / 12) * Math.PI * 2 + angle;
+            const nextAngle = ((i + 1) / 12) * Math.PI * 2 + angle;
+
+            // 只绘制前方的墙壁（视角范围内）
+            const relativeAngle = ((wallAngle % (Math.PI * 2)) + Math.PI * 2) % (Math.PI * 2);
+            if (relativeAngle > Math.PI * 0.3 && relativeAngle < Math.PI * 1.7) {
+                // 墙壁深度（模拟距离）
+                const depth = Math.sin(wallAngle + Math.PI * 0.5);
+                const wallBrightness = 0.3 + depth * 0.2;
+
+                ctx.fillStyle = `rgba(${70 * wallBrightness}, ${60 * wallBrightness}, ${80 * wallBrightness}, 0.8)`;
+
+                // 绘制墙砖
+                const x1 = Math.cos(wallAngle) * wallDist;
+                const y1 = Math.sin(wallAngle) * wallDist * 0.3;
+                const x2 = Math.cos(nextAngle) * wallDist;
+                const y2 = Math.sin(nextAngle) * wallDist * 0.3;
+
+                ctx.beginPath();
+                ctx.moveTo(x1, y1 - h * 0.3);
+                ctx.lineTo(x2, y2 - h * 0.3);
+                ctx.lineTo(x2, y2 + h * 0.4);
+                ctx.lineTo(x1, y1 + h * 0.4);
+                ctx.closePath();
+                ctx.fill();
+
+                // 砖缝
+                ctx.strokeStyle = 'rgba(40, 35, 45, 0.5)';
+                ctx.lineWidth = 1;
+                ctx.stroke();
+            }
+        }
+
+        // 墙上的火炬/光源
+        const torchPositions = [0, 2, 4, 6, 8, 10];
+        torchPositions.forEach((pos, idx) => {
+            const torchAngle = (pos / 12) * Math.PI * 2 + angle;
+            const relativeAngle = ((torchAngle % (Math.PI * 2)) + Math.PI * 2) % (Math.PI * 2);
+
+            if (relativeAngle > Math.PI * 0.4 && relativeAngle < Math.PI * 1.6) {
+                const tx = Math.cos(torchAngle) * wallDist * 0.9;
+                const ty = Math.sin(torchAngle) * wallDist * 0.25;
+
+                // 火焰光晕
+                const glowGrad = ctx.createRadialGradient(tx, ty, 0, tx, ty, 60);
+                glowGrad.addColorStop(0, `rgba(255, 180, 80, ${0.4 + Math.sin(time * 0.005 + idx) * 0.1})`);
+                glowGrad.addColorStop(0.5, 'rgba(255, 150, 50, 0.2)');
+                glowGrad.addColorStop(1, 'transparent');
+                ctx.fillStyle = glowGrad;
+                ctx.beginPath();
+                ctx.arc(tx, ty, 60, 0, Math.PI * 2);
+                ctx.fill();
+
+                // 火焰
+                drawFlame(ctx, tx, ty, time + idx * 500);
+            }
+        });
+
+        ctx.restore();
+    }
+
+    /**
+     * 绘制火焰
+     */
+    function drawFlame(ctx, x, y, time) {
+        ctx.save();
+
+        // 外焰
+        const outerFlame = ctx.createRadialGradient(x, y - 10, 0, x, y - 10, 15);
+        outerFlame.addColorStop(0, 'rgba(255, 200, 100, 0.9)');
+        outerFlame.addColorStop(0.5, 'rgba(255, 120, 30, 0.7)');
+        outerFlame.addColorStop(1, 'rgba(255, 60, 10, 0)');
+
+        ctx.fillStyle = outerFlame;
+
+        // 火焰形状（动态）
+        ctx.beginPath();
+        ctx.moveTo(x, y + 5);
+        ctx.quadraticCurveTo(
+            x - 8 - Math.sin(time * 0.01) * 3,
+            y - 5,
+            x - 3 + Math.sin(time * 0.015) * 2,
+            y - 15 - Math.sin(time * 0.008) * 5
+        );
+        ctx.quadraticCurveTo(
+            x,
+            y - 25 - Math.sin(time * 0.012) * 5,
+            x + 3 + Math.sin(time * 0.013) * 2,
+            y - 15 - Math.sin(time * 0.009) * 5
+        );
+        ctx.quadraticCurveTo(
+            x + 8 + Math.sin(time * 0.011) * 3,
+            y - 5,
+            x,
+            y + 5
+        );
+        ctx.fill();
+
+        // 内焰
+        const innerFlame = ctx.createRadialGradient(x, y - 8, 0, x, y - 8, 8);
+        innerFlame.addColorStop(0, 'rgba(255, 255, 200, 0.9)');
+        innerFlame.addColorStop(1, 'rgba(255, 200, 100, 0)');
+
+        ctx.fillStyle = innerFlame;
+        ctx.beginPath();
+        ctx.arc(x, y - 8, 6, 0, Math.PI * 2);
+        ctx.fill();
+
+        ctx.restore();
+    }
+
+    /**
+     * 绘制可见的台阶（第一人称视角）
+     */
+    function drawVisibleSteps(ctx, w, h, angle, height, bob, time) {
+        ctx.save();
+
+        // 根据视角和高度绘制台阶
+        const numSteps = 20;
+        const stepHeight = h * 0.04;
+        const stepWidth = w * 0.25;
+        const spiralRadius = Math.min(w, h) * 0.25;
+
+        for (let i = 0; i < numSteps; i++) {
+            // 螺旋角度
+            const stepAngle = angle + (i / numSteps) * Math.PI * 1.5;
+            // 台阶高度（螺旋上升）
+            const stepY = h * 0.3 - i * stepHeight + bob * h * 50;
+
+            // 只绘制视野内的台阶
+            const relativeAngle = ((stepAngle % (Math.PI * 2)) + Math.PI * 2) % (Math.PI * 2);
+            if (relativeAngle > Math.PI * 0.2 && relativeAngle < Math.PI * 1.3) {
+                // 台阶距离（透视）
+                const perspective = 1 - (i / numSteps) * 0.6;
+                const dist = spiralRadius * perspective;
+
+                const stepX = Math.cos(stepAngle) * dist;
+                const stepZ = Math.sin(stepAngle) * dist;
+
+                // 只绘制向前的台阶
+                if (stepZ > -50) {
+                    const stepBrightness = 0.4 + stepZ / spiralRadius * 0.3;
+
+                    // 台阶顶面
+                    ctx.fillStyle = `rgba(${90 * stepBrightness}, ${80 * stepBrightness}, ${70 * stepBrightness}, 0.9)`;
+                    ctx.beginPath();
+
+                    const topLeft = stepX - stepWidth * 0.3 * perspective;
+                    const topRight = stepX + stepWidth * 0.3 * perspective;
+
+                    ctx.moveTo(topLeft, stepY - stepHeight * 0.3);
+                    ctx.lineTo(topRight, stepY - stepHeight * 0.3);
+                    ctx.lineTo(topRight, stepY + stepHeight * 0.3);
+                    ctx.lineTo(topLeft, stepY + stepHeight * 0.3);
+                    ctx.closePath();
+                    ctx.fill();
+
+                    // 台阶侧面
+                    ctx.fillStyle = `rgba(${60 * stepBrightness}, ${50 * stepBrightness}, ${40 * stepBrightness}, 0.8)`;
+                    ctx.fillRect(topLeft, stepY + stepHeight * 0.1, (topRight - topLeft), stepHeight * 0.4);
+
+                    // 台阶边缘高光
+                    ctx.strokeStyle = `rgba(150, 130, 100, ${stepBrightness * 0.5})`;
+                    ctx.lineWidth = 1;
+                    ctx.beginPath();
+                    ctx.moveTo(topLeft, stepY - stepHeight * 0.3);
+                    ctx.lineTo(topRight, stepY - stepHeight * 0.3);
+                    ctx.stroke();
+                }
+            }
+        }
+
+        ctx.restore();
+    }
+
+    /**
+     * 绘制爬塔过程中的粒子效果
+     */
+    function drawClimbParticles(ctx, w, h, height, time) {
+        // 飘落的尘埃
+        for (let i = 0; i < 30; i++) {
+            const px = (Math.sin(time * 0.0005 + i * 0.7) * w * 0.3);
+            const py = (Math.cos(time * 0.0007 + i * 0.5) * h * 0.4 + (time * 0.02 + i * 20) % (h * 0.8)) - h * 0.4;
+            const size = 1 + Math.sin(time * 0.003 + i) * 0.5;
+            const opacity = 0.3 + Math.sin(time * 0.002 + i * 0.3) * 0.2;
+
+            ctx.beginPath();
+            ctx.arc(px, py, size, 0, Math.PI * 2);
+            ctx.fillStyle = `rgba(255, 220, 180, ${opacity})`;
+            ctx.fill();
+        }
+
+        // 上升时的光晕
+        const glowOpacity = 0.15 + Math.sin(time * 0.002) * 0.05;
+        const glowGrad = ctx.createRadialGradient(0, 0, 0, 0, 0, Math.min(w, h) * 0.5);
+        glowGrad.addColorStop(0, `rgba(255, 200, 100, ${glowOpacity})`);
+        glowGrad.addColorStop(0.5, `rgba(255, 180, 80, ${glowOpacity * 0.5})`);
+        glowGrad.addColorStop(1, 'transparent');
+        ctx.fillStyle = glowGrad;
+        ctx.fillRect(-w, -h, w * 2, h * 2);
+    }
+
+    /**
+     * 执行爬塔过渡动画
+     */
+    function performClimbTransition() {
         const startTime = Date.now();
+        const totalDuration = CONFIG.transitionDuration;
+        const phase1Duration = totalDuration * 0.25;  // 转身
+        const phase2Duration = totalDuration * 0.50;  // 攀爬
+        const phase3Duration = totalDuration * 0.25;  // 到达
 
-        // 淡出
-        function fadeOut() {
+        // 隐藏主场景和UI
+        mainCanvas.style.opacity = '0';
+        blessingEl.classList.remove('show');
+
+        function animateClimb() {
             const elapsed = Date.now() - startTime;
-            const progress = Math.min(elapsed / (CONFIG.transitionDuration / 2), 1);
+            let phase = 0;
+            let phaseProgress = 0;
 
-            transitionOpacity = progress;
-            drawTransition(transCtx, transCanvas.width, transCanvas.height, transitionOpacity);
-
-            if (progress < 1) {
-                requestAnimationFrame(fadeOut);
+            if (elapsed < phase1Duration) {
+                phase = 0;
+                phaseProgress = elapsed / phase1Duration;
+            } else if (elapsed < phase1Duration + phase2Duration) {
+                phase = 1;
+                phaseProgress = (elapsed - phase1Duration) / phase2Duration;
+            } else if (elapsed < totalDuration) {
+                phase = 2;
+                phaseProgress = (elapsed - phase1Duration - phase2Duration) / phase3Duration;
             } else {
+                // 动画完成
+                climbCtx.clearRect(0, 0, climbCanvas.width, climbCanvas.height);
+
                 // 切换层级
                 currentLevel++;
                 levelParticles = [];
                 levelIndicator.textContent = `第 ${currentLevel + 1} 层`;
 
-                // 淡入
-                fadeIn();
+                // 显示主场景
+                mainCanvas.style.opacity = '1';
 
                 // 显示祝福语
                 showBlessing();
@@ -1327,24 +1675,40 @@
                     climbBtn.style.display = 'none';
                     levelIndicator.style.display = 'none';
                 }
-            }
-        }
 
-        function fadeIn() {
-            const elapsed = Date.now() - startTime - CONFIG.transitionDuration / 2;
-            const progress = Math.min(elapsed / (CONFIG.transitionDuration / 2), 1);
-
-            transitionOpacity = 1 - progress;
-            drawTransition(transCtx, transCanvas.width, transCanvas.height, transitionOpacity);
-
-            if (progress < 1) {
-                requestAnimationFrame(fadeIn);
-            } else {
                 isTransitioning = false;
+                return;
             }
+
+            // 使用缓动函数使动画更平滑
+            const easedProgress = easeInOutCubic(phaseProgress);
+
+            // 绘制爬塔动画
+            drawSpiralStaircase(climbCtx, climbCanvas.width, climbCanvas.height, easedProgress, phase, elapsed);
+
+            climbAnimationId = requestAnimationFrame(animateClimb);
         }
 
-        fadeOut();
+        animateClimb();
+    }
+
+    /**
+     * 缓动函数 - 三次贝塞尔
+     */
+    function easeInOutCubic(t) {
+        return t < 0.5
+            ? 4 * t * t * t
+            : 1 - Math.pow(-2 * t + 2, 3) / 2;
+    }
+
+    // ============================================
+    // 事件处理
+    // ============================================
+    function climbUp() {
+        if (isTransitioning || currentLevel >= CONFIG.levels.length - 1) return;
+
+        isTransitioning = true;
+        performClimbTransition();
     }
 
     function showBlessing() {
