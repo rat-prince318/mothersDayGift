@@ -263,6 +263,20 @@
                         hue: Math.random() * 60 + 30
                     });
                 }
+                // 洞穴岩石数据
+                sceneParticles.caveRocks = [];
+                for (let layer = 0; layer < 3; layer++) {
+                    for (let i = 0; i < 20; i++) {
+                        sceneParticles.caveRocks.push({
+                            x: Math.random() * w,
+                            y: h * (0.3 + layer * 0.22) + Math.random() * h * 0.1,
+                            width: 40 + Math.random() * 80,
+                            height: 25 + Math.random() * 50,
+                            layer: layer,
+                            textureOffset: Math.random() * 100
+                        });
+                    }
+                }
                 break;
 
             case 1: // 冰原
@@ -286,6 +300,23 @@
                         angle: Math.random() * Math.PI * 2,
                         branches: Math.floor(Math.random() * 3) + 1
                     });
+                }
+                // 预计算冰川数据以消除每帧随机抖动
+                sceneParticles.glacierData = [
+                    { x: w * 0.08, baseY: h * 0.52, height: h * 0.12, width: w * 0.10 },
+                    { x: w * 0.22, baseY: h * 0.54, height: h * 0.18, width: w * 0.09 },
+                    { x: w * 0.38, baseY: h * 0.50, height: h * 0.15, width: w * 0.12 },
+                    { x: w * 0.55, baseY: h * 0.56, height: h * 0.20, width: w * 0.11 },
+                    { x: w * 0.72, baseY: h * 0.51, height: h * 0.14, width: w * 0.08 },
+                    { x: w * 0.85, baseY: h * 0.53, height: h * 0.16, width: w * 0.12 }
+                ];
+                sceneParticles.glacierEdgeOffsets = [];
+                for (let g = 0; g < 6; g++) {
+                    const edgePoints = [];
+                    for (let i = 0; i <= 8; i++) {
+                        edgePoints.push(Math.random() * 10);
+                    }
+                    sceneParticles.glacierEdgeOffsets.push(edgePoints);
                 }
                 break;
 
@@ -328,6 +359,17 @@
                     { x: w * 0.1, y: h * 0.35, sway: 0 },
                     { x: w * 0.85, y: h * 0.38, sway: Math.PI }
                 ];
+                // 蜿蜒边界数据
+                sceneParticles.boundaryWavePhase = Math.random() * Math.PI * 2;
+                sceneParticles.boundaryPoints = [];
+                for (let i = 0; i <= 100; i++) {
+                    const bx = (i / 100) * w;
+                    const by = h * 0.52
+                        + Math.sin(bx * 0.008 + sceneParticles.boundaryWavePhase) * 12
+                        + Math.sin(bx * 0.02 + 1.5) * 6
+                        + Math.sin(bx * 0.035 + 2.8) * 3;
+                    sceneParticles.boundaryPoints.push({ x: bx, baseY: by });
+                }
                 break;
 
             case 4: // 草原
@@ -376,9 +418,11 @@
                         sceneParticles.flowerPatches.push({
                             x: Math.random() * w,
                             y: h * 0.35 + band * h * 0.15 + Math.random() * h * 0.12,
-                            size: 3 + Math.random() * 6,
+                            size: 4 + Math.random() * 7,
                             colors: colors[band],
-                            phase: Math.random() * Math.PI * 2
+                            phase: Math.random() * Math.PI * 2,
+                            rotationOffset: Math.random() * Math.PI * 0.3,
+                            petalSizeVariation: 0.8 + Math.random() * 0.4
                         });
                     }
                 }
@@ -665,6 +709,9 @@
         ctx.fillStyle = depthGlow;
         ctx.fillRect(0, 0, w, h);
 
+        // 绘制洞穴岩石
+        drawCaveRocks(ctx, w, h, time);
+
         // 绘制水晶
         const crystals = sceneParticles.crystals || [];
         crystals.forEach((crystal, idx) => {
@@ -718,6 +765,78 @@
             ctx.arc(x, y, size, 0, Math.PI * 2);
             ctx.fill();
         }
+    }
+
+    function drawCaveRocks(ctx, w, h, time) {
+        const rocks = sceneParticles.caveRocks || [];
+        rocks.sort((a, b) => a.layer - b.layer);
+
+        rocks.forEach(rock => {
+            const depth = 1 - rock.layer * 0.25;
+            const baseGray = 40 + rock.layer * 15;
+
+            const rockGrad = ctx.createLinearGradient(
+                rock.x, rock.y,
+                rock.x + rock.width, rock.y + rock.height
+            );
+            rockGrad.addColorStop(0, `rgba(${baseGray}, ${baseGray + 5}, ${baseGray + 15}, ${0.8 * depth})`);
+            rockGrad.addColorStop(0.5, `rgba(${baseGray + 10}, ${baseGray + 15}, ${baseGray + 25}, ${0.85 * depth})`);
+            rockGrad.addColorStop(1, `rgba(${baseGray - 5}, ${baseGray}, ${baseGray + 10}, ${0.75 * depth})`);
+
+            ctx.fillStyle = rockGrad;
+            ctx.beginPath();
+            const points = 8;
+            for (let i = 0; i <= points; i++) {
+                const angle = (i / points) * Math.PI * 2;
+                const rx = rock.width * (0.4 + Math.sin(rock.textureOffset + i * 2) * 0.15);
+                const ry = rock.height * (0.3 + Math.cos(rock.textureOffset + i * 1.5) * 0.15);
+                const px = rock.x + rock.width / 2 + Math.cos(angle) * rx;
+                const py = rock.y + rock.height / 2 + Math.sin(angle) * ry;
+                if (i === 0) ctx.moveTo(px, py);
+                else ctx.lineTo(px, py);
+            }
+            ctx.closePath();
+            ctx.fill();
+
+            // 层叠纹理线
+            ctx.strokeStyle = `rgba(30, 35, 45, ${0.3 * depth})`;
+            ctx.lineWidth = 0.5;
+            for (let j = 0; j < 5; j++) {
+                const yOff = rock.y + rock.height * (0.2 + j * 0.15);
+                ctx.beginPath();
+                ctx.moveTo(rock.x + rock.width * 0.1, yOff);
+                ctx.bezierCurveTo(
+                    rock.x + rock.width * 0.3, yOff + Math.sin(rock.textureOffset + j) * 3,
+                    rock.x + rock.width * 0.7, yOff - Math.sin(rock.textureOffset + j + 1) * 3,
+                    rock.x + rock.width * 0.9, yOff
+                );
+                ctx.stroke();
+            }
+
+            // 颗粒感暗点
+            for (let k = 0; k < 8; k++) {
+                const spotX = rock.x + (rock.textureOffset * 7 + k * 37) % rock.width;
+                const spotY = rock.y + (rock.textureOffset * 13 + k * 23) % rock.height;
+                const spotR = 1.5 + (rock.textureOffset + k) % 4;
+                ctx.fillStyle = `rgba(20, 22, 30, ${0.15 * depth})`;
+                ctx.beginPath();
+                ctx.arc(spotX, spotY, spotR, 0, Math.PI * 2);
+                ctx.fill();
+            }
+
+            // 暗蓝青色反光
+            if (rock.layer >= 1) {
+                const reflectX = rock.x + rock.width * 0.25 + (rock.textureOffset % 0.5) * rock.width;
+                const reflectY = rock.y + rock.height * 0.35;
+                const reflectGrad = ctx.createRadialGradient(reflectX, reflectY, 0, reflectX, reflectY, 25);
+                reflectGrad.addColorStop(0, `rgba(60, 100, 130, ${0.12 * depth})`);
+                reflectGrad.addColorStop(1, 'transparent');
+                ctx.fillStyle = reflectGrad;
+                ctx.beginPath();
+                ctx.arc(reflectX, reflectY, 25, 0, Math.PI * 2);
+                ctx.fill();
+            }
+        });
     }
 
     function drawDetailedCrystal(ctx, x, y, height, width, angle, hue, phase, time, idx) {
@@ -897,13 +1016,14 @@
     }
 
     function drawGlaciers(ctx, w, h, time) {
-        const glaciers = [
+        const glaciers = sceneParticles.glacierData || [
             { x: w * 0.1, baseY: h * 0.55, height: h * 0.15, width: w * 0.12 },
             { x: w * 0.25, baseY: h * 0.55, height: h * 0.2, width: w * 0.08 },
             { x: w * 0.55, baseY: h * 0.55, height: h * 0.18, width: w * 0.1 },
             { x: w * 0.75, baseY: h * 0.55, height: h * 0.12, width: w * 0.07 },
             { x: w * 0.85, baseY: h * 0.55, height: h * 0.22, width: w * 0.15 }
         ];
+        const edgeOffsets = sceneParticles.glacierEdgeOffsets || [];
 
         glaciers.forEach((g, idx) => {
             const iceGrad = ctx.createLinearGradient(g.x, g.baseY - g.height, g.x, g.baseY);
@@ -916,13 +1036,15 @@
             ctx.beginPath();
             ctx.moveTo(g.x, g.baseY);
 
-            // 不规则的冰川边缘
+            // 不规则的冰川边缘（使用预计算偏移，消除每帧随机抖动）
             const points = 8;
+            const offsets = edgeOffsets[idx] || [];
             for (let i = 0; i <= points; i++) {
                 const px = g.x + (i / points) * g.width;
                 const py = g.baseY - g.height * (0.7 + Math.sin(i * 1.5 + idx) * 0.3);
+                const offset = offsets[i] || 0;
                 if (i === 0) ctx.lineTo(px, py);
-                else ctx.lineTo(px, py + Math.random() * 10);
+                else ctx.lineTo(px, py + offset);
             }
             ctx.lineTo(g.x + g.width, g.baseY);
             ctx.closePath();
@@ -937,6 +1059,65 @@
             ctx.closePath();
             ctx.fill();
         });
+
+        // 绘制起伏地平线：雪丘、远山、冰塔林
+        drawUndulatingHorizon(ctx, w, h, time);
+    }
+
+    function drawUndulatingHorizon(ctx, w, h, time) {
+        // 远层：连绵雪丘
+        ctx.fillStyle = 'rgba(180, 200, 220, 0.6)';
+        ctx.beginPath();
+        ctx.moveTo(0, h * 0.58);
+        for (let x = 0; x <= w; x += 4) {
+            const hillY = h * 0.50
+                + Math.sin(x * 0.004) * 15
+                + Math.sin(x * 0.008 + 1) * 8
+                + Math.sin(x * 0.015 + 2) * 4;
+            ctx.lineTo(x, hillY);
+        }
+        ctx.lineTo(w, h * 0.58);
+        ctx.lineTo(0, h * 0.58);
+        ctx.closePath();
+        ctx.fill();
+
+        // 中层：锯齿状远山
+        ctx.fillStyle = 'rgba(100, 130, 160, 0.5)';
+        ctx.beginPath();
+        ctx.moveTo(0, h * 0.52);
+        const mountainPeaks = [
+            { x: 0.03, y: 0.38 }, { x: 0.10, y: 0.42 }, { x: 0.16, y: 0.35 },
+            { x: 0.23, y: 0.40 }, { x: 0.30, y: 0.36 }, { x: 0.38, y: 0.43 },
+            { x: 0.45, y: 0.37 }, { x: 0.52, y: 0.41 }, { x: 0.60, y: 0.34 },
+            { x: 0.68, y: 0.39 }, { x: 0.76, y: 0.44 }, { x: 0.83, y: 0.38 },
+            { x: 0.91, y: 0.42 }, { x: 0.97, y: 0.40 }
+        ];
+        mountainPeaks.forEach((peak, i) => {
+            ctx.lineTo(peak.x * w, peak.y * h);
+            if (i % 3 === 0 && peak.y < 0.4) {
+                ctx.lineTo(peak.x * w + 3, peak.y * h - 15);
+                ctx.lineTo(peak.x * w - 3, peak.y * h - 18);
+                ctx.lineTo(peak.x * w, peak.y * h);
+            }
+        });
+        ctx.lineTo(w, h * 0.52);
+        ctx.lineTo(0, h * 0.52);
+        ctx.closePath();
+        ctx.fill();
+
+        // 近层：冰塔林剪影
+        ctx.fillStyle = 'rgba(60, 100, 140, 0.7)';
+        for (let i = 0; i < 12; i++) {
+            const tx = w * (0.08 + i * 0.07);
+            const towerHeight = 30 + Math.sin(i * 2.5) * 20;
+            const baseY = h * 0.54;
+            ctx.beginPath();
+            ctx.moveTo(tx - 4, baseY);
+            ctx.lineTo(tx, baseY - towerHeight);
+            ctx.lineTo(tx + 4, baseY);
+            ctx.closePath();
+            ctx.fill();
+        }
     }
 
     function drawIceTexture(ctx, w, h, time) {
@@ -1269,13 +1450,34 @@
     }
 
     function drawClearWater(ctx, w, h, time) {
-        // 浅水区渐变（透明效果）
+        // 浅水区渐变（透明效果），底部使用蜿蜒边界
+        const boundaryPhase = sceneParticles.boundaryWavePhase || 0;
+
+        ctx.save();
+        ctx.beginPath();
+        // 顶部直线
+        ctx.moveTo(0, h * 0.35);
+        for (let x = 0; x <= w; x += 4) {
+            const topY = h * 0.35 + Math.sin(x * 0.01 + time * 0.001) * 3;
+            ctx.lineTo(x, topY);
+        }
+        // 底部蜿蜒曲线
+        for (let x = w; x >= 0; x -= 4) {
+            let boundaryY = h * 0.52
+                + Math.sin(x * 0.008 + time * 0.001 + boundaryPhase) * 12
+                + Math.sin(x * 0.02 + time * 0.002) * 6
+                + Math.sin(x * 0.035 + time * 0.0015) * 3;
+            ctx.lineTo(x, boundaryY);
+        }
+        ctx.closePath();
+
         const waterGrad = ctx.createLinearGradient(0, h * 0.35, 0, h * 0.55);
         waterGrad.addColorStop(0, 'rgba(100, 180, 220, 0.5)');
         waterGrad.addColorStop(0.5, 'rgba(80, 170, 210, 0.6)');
         waterGrad.addColorStop(1, 'rgba(60, 150, 190, 0.7)');
         ctx.fillStyle = waterGrad;
-        ctx.fillRect(0, h * 0.35, w, h * 0.2);
+        ctx.fill();
+        ctx.restore();
 
         // 水底细节（贝壳、珊瑚）
         ctx.save();
@@ -1284,13 +1486,11 @@
             const sx = (i * 83) % w;
             const sy = h * 0.4 + (i * 17) % (h * 0.1);
 
-            // 贝壳
             ctx.fillStyle = 'rgba(200, 180, 160, 0.5)';
             ctx.beginPath();
             ctx.ellipse(sx, sy, 6, 4, Math.PI * 0.1, 0, Math.PI * 2);
             ctx.fill();
 
-            // 贝壳纹理
             ctx.strokeStyle = 'rgba(180, 160, 140, 0.4)';
             ctx.lineWidth = 0.5;
             for (let j = 0; j < 4; j++) {
@@ -1332,14 +1532,31 @@
     }
 
     function drawDetailedSand(ctx, w, h, time) {
-        // 沙滩基底
+        const boundaryPhase = sceneParticles.boundaryWavePhase || 0;
+
+        // 沙滩基底 — 顶部跟随蜿蜒边界
+        ctx.save();
+        ctx.beginPath();
+        for (let x = 0; x <= w; x += 4) {
+            const boundaryY = h * 0.52
+                + Math.sin(x * 0.008 + time * 0.001 + boundaryPhase) * 12
+                + Math.sin(x * 0.02 + time * 0.002) * 6
+                + Math.sin(x * 0.035 + time * 0.0015) * 3;
+            if (x === 0) ctx.moveTo(x, boundaryY);
+            else ctx.lineTo(x, boundaryY);
+        }
+        ctx.lineTo(w, h);
+        ctx.lineTo(0, h);
+        ctx.closePath();
+
         const sandGrad = ctx.createLinearGradient(0, h * 0.52, 0, h);
         sandGrad.addColorStop(0, '#f8f0e0');
         sandGrad.addColorStop(0.3, '#f4e8d4');
         sandGrad.addColorStop(0.6, '#f0e0c8');
         sandGrad.addColorStop(1, '#ecdcc0');
         ctx.fillStyle = sandGrad;
-        ctx.fillRect(0, h * 0.52, w, h * 0.48);
+        ctx.fill();
+        ctx.restore();
 
         // 风吹沙纹
         ctx.save();
@@ -1356,18 +1573,38 @@
         }
         ctx.restore();
 
-        // 海浪冲刷的水膜
-        const foamLine = h * 0.52 + Math.sin(time * 0.001) * 10;
-        ctx.fillStyle = 'rgba(200, 220, 240, 0.3)';
-        ctx.fillRect(0, foamLine, w, 15);
+        // 湿润痕迹（退潮水痕）
+        drawWetSandTraces(ctx, w, h, time);
 
-        // 细密泡沫
+        // 海浪冲刷的水膜 — 跟随蜿蜒边界
+        ctx.save();
+        ctx.beginPath();
+        for (let x = 0; x <= w; x += 4) {
+            const foamY = h * 0.52
+                + Math.sin(x * 0.008 + time * 0.001 + boundaryPhase) * 12
+                + Math.sin(x * 0.02 + time * 0.002) * 6
+                + Math.sin(x * 0.035 + time * 0.0015) * 3;
+            if (x === 0) ctx.moveTo(x, foamY);
+            else ctx.lineTo(x, foamY);
+        }
+        ctx.lineTo(w, h * 0.57);
+        ctx.lineTo(0, h * 0.57);
+        ctx.closePath();
+        ctx.fillStyle = 'rgba(200, 220, 240, 0.15)';
+        ctx.fill();
+        ctx.restore();
+
+        // 细密泡沫 — 沿蜿蜒分界线分布
         const foamParticles = sceneParticles.foamParticles || [];
         foamParticles.forEach(foam => {
+            const foamLineY = h * 0.52
+                + Math.sin(foam.x * 0.008 + time * 0.001 + boundaryPhase) * 12
+                + Math.sin(foam.x * 0.02 + time * 0.002) * 6
+                + Math.sin(foam.x * 0.035 + time * 0.0015) * 3;
             foam.opacity = 0.3 + Math.sin(time * 0.003 + foam.x * 0.1) * 0.3;
             ctx.fillStyle = `rgba(255, 255, 255, ${foam.opacity})`;
             ctx.beginPath();
-            ctx.arc(foam.x, foamLine + Math.sin(foam.x * 0.05 + time * 0.002) * 5, foam.size, 0, Math.PI * 2);
+            ctx.arc(foam.x, foamLineY + Math.sin(foam.x * 0.05 + time * 0.002) * 5, foam.size, 0, Math.PI * 2);
             ctx.fill();
         });
 
@@ -1380,6 +1617,43 @@
 
             ctx.beginPath();
             ctx.ellipse(footX + offset, footY, 7, 11, Math.PI * 0.08, 0, Math.PI * 2);
+            ctx.fill();
+        }
+    }
+
+    function drawWetSandTraces(ctx, w, h, time) {
+        const boundaryPhase = sceneParticles.boundaryWavePhase || 0;
+
+        for (let trace = 0; trace < 3; trace++) {
+            const traceOffset = trace * 8 + 6;
+            const opacity = 0.18 - trace * 0.05;
+
+            ctx.strokeStyle = `rgba(180, 190, 200, ${opacity})`;
+            ctx.lineWidth = 2 - trace * 0.5;
+            ctx.beginPath();
+
+            for (let x = 0; x <= w; x += 5) {
+                let y = h * 0.52 + traceOffset
+                    + Math.sin(x * 0.008 + time * 0.001 + boundaryPhase) * 12
+                    + Math.sin(x * 0.02 + time * 0.002) * 6
+                    + Math.sin(x * 0.035 + time * 0.0015) * 3
+                    + Math.sin(x * (0.015 + trace * 0.003) + time * 0.0008 + trace) * 8;
+                if (x === 0) ctx.moveTo(x, y);
+                else ctx.lineTo(x, y);
+            }
+            ctx.stroke();
+        }
+
+        // 细密泡沫点沿最内层湿痕
+        ctx.fillStyle = 'rgba(255, 255, 255, 0.18)';
+        for (let x = 0; x < w; x += 14) {
+            const foamY = h * 0.52 + 6
+                + Math.sin(x * 0.008 + time * 0.001 + boundaryPhase) * 12
+                + Math.sin(x * 0.02 + time * 0.002) * 6
+                + Math.sin(x * 0.035 + time * 0.0015) * 3;
+            const foamSize = 2.5 + Math.sin(x * 0.05 + time * 0.001) * 2;
+            ctx.beginPath();
+            ctx.arc(x, foamY, foamSize, 0, Math.PI * 2);
             ctx.fill();
         }
     }
@@ -1659,27 +1933,46 @@
             // 花朵细节
             const patches = (sceneParticles.flowerPatches || []).filter(p => p.y >= band.y && p.y < band.y + band.height);
             patches.forEach(patch => {
-                const sway = Math.sin(time * 0.002 + patch.phase) * 2;
+                const sway = Math.sin(time * 0.002 + patch.phase) * 6;
+                const rotationOffset = patch.rotationOffset || 0;
+                const sizeVar = patch.petalSizeVariation || 1;
 
-                // 多瓣花
+                // 五瓣花 — 各瓣角度有变化
                 for (let i = 0; i < 5; i++) {
-                    const angle = (i / 5) * Math.PI * 2;
+                    const angle = (i / 5) * Math.PI * 2 + rotationOffset;
                     ctx.fillStyle = patch.colors[bandIdx % 3];
                     ctx.beginPath();
                     ctx.ellipse(
-                        patch.x + sway + Math.cos(angle) * patch.size * 0.4,
-                        patch.y + Math.sin(angle) * patch.size * 0.4,
-                        patch.size * 0.5, patch.size * 0.3,
+                        patch.x + sway + Math.cos(angle) * patch.size * 0.5 * sizeVar,
+                        patch.y + Math.sin(angle) * patch.size * 0.5 * sizeVar,
+                        patch.size * 0.6 * sizeVar,
+                        patch.size * 0.35 * sizeVar,
                         angle, 0, Math.PI * 2
                     );
                     ctx.fill();
+
+                    // 花瓣边缘高光
+                    ctx.strokeStyle = 'rgba(255, 255, 255, 0.3)';
+                    ctx.lineWidth = 0.5;
+                    ctx.stroke();
                 }
 
                 // 花心
                 ctx.fillStyle = '#ffd700';
                 ctx.beginPath();
-                ctx.arc(patch.x + sway, patch.y, patch.size * 0.25, 0, Math.PI * 2);
+                ctx.arc(patch.x + sway, patch.y, patch.size * 0.3, 0, Math.PI * 2);
                 ctx.fill();
+
+                // 花蕊细节点
+                ctx.fillStyle = '#ff9800';
+                for (let j = 0; j < 5; j++) {
+                    const dotAngle = (j / 5) * Math.PI * 2;
+                    const dotX = patch.x + sway + Math.cos(dotAngle) * patch.size * 0.15;
+                    const dotY = patch.y + Math.sin(dotAngle) * patch.size * 0.15;
+                    ctx.beginPath();
+                    ctx.arc(dotX, dotY, patch.size * 0.08, 0, Math.PI * 2);
+                    ctx.fill();
+                }
             });
         });
     }
@@ -2356,7 +2649,7 @@
         } else if (phase === 1) {
             viewAngle = Math.PI * 0.5;
             viewHeight = progress;
-            viewBob = Math.sin(progress * Math.PI * 8) * 0.02;
+            viewBob = Math.sin(progress * Math.PI * 4) * 0.015;
         } else if (phase === 2) {
             viewAngle = Math.PI * 0.5 * (1 - progress);
             viewHeight = 1;
@@ -2569,9 +2862,9 @@
     function performClimbTransition() {
         const startTime = Date.now();
         const totalDuration = CONFIG.transitionDuration;
-        const phase1Duration = totalDuration * 0.25;
-        const phase2Duration = totalDuration * 0.50;
-        const phase3Duration = totalDuration * 0.25;
+        const phase1Duration = totalDuration * 0.15;
+        const phase2Duration = totalDuration * 0.70;
+        const phase3Duration = totalDuration * 0.15;
 
         mainCanvas.style.opacity = '0';
         blessingEl.classList.remove('show');
