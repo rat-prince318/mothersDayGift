@@ -5,6 +5,7 @@
 ## 体验方式
 
 1.直接打开https://rat-prince318.github.io/mothersDayGift/mothersDayGift.html
+
 2.在浏览器中打开 `mothersDayGift.html`，点击「向上攀登」按钮逐层登塔。
 
 ## 楼层场景
