@@ -1,0 +1,2965 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>为妈妈攀登祝福之塔</title>
+    <style>
+        * {
+            margin: 0;
+            padding: 0;
+            box-sizing: border-box;
+        }
+
+        body {
+            width: 100vw;
+            height: 100vh;
+            overflow: hidden;
+            background: linear-gradient(135deg, #1a1a2e 0%, #16213e 50%, #0f0f23 100%);
+            display: flex;
+            justify-content: center;
+            align-items: center;
+            font-family: 'Georgia', 'Times New Roman', serif;
+        }
+
+        #container {
+            position: relative;
+            width: 100%;
+            height: 100%;
+        }
+
+        #bgCanvas {
+            position: absolute;
+            top: 0;
+            left: 0;
+            z-index: 1;
+        }
+
+        #mainCanvas {
+            position: absolute;
+            top: 0;
+            left: 0;
+            z-index: 2;
+            transition: opacity 0.5s ease-in-out;
+        }
+
+        #transitionCanvas {
+            position: absolute;
+            top: 0;
+            left: 0;
+            z-index: 3;
+            pointer-events: none;
+            background: transparent;
+        }
+
+        #climbCanvas {
+            position: absolute;
+            top: 0;
+            left: 0;
+            z-index: 4;
+            pointer-events: none;
+            background: transparent;
+        }
+
+        #blessingText {
+            position: absolute;
+            top: 20%;
+            left: 50%;
+            transform: translateX(-50%);
+            z-index: 10;
+            color: #fff;
+            font-size: clamp(16px, 3vw, 28px);
+            text-align: center;
+            padding: 0 20px;
+            max-width: 80%;
+            text-shadow: 0 0 20px rgba(255, 215, 150, 0.8),
+                         0 0 40px rgba(255, 200, 100, 0.6),
+                         0 0 60px rgba(255, 180, 80, 0.4);
+            opacity: 0;
+            transition: opacity 0.8s ease-in-out;
+            line-height: 1.6;
+            letter-spacing: 2px;
+            pointer-events: none;
+        }
+
+        #blessingText.show {
+            opacity: 1;
+        }
+
+        #climbBtn {
+            position: absolute;
+            bottom: 12%;
+            left: 50%;
+            transform: translateX(-50%);
+            z-index: 10;
+            padding: 18px 50px;
+            font-size: 20px;
+            font-family: inherit;
+            background: linear-gradient(145deg, #ffd700, #ffb347, #ff9f43);
+            color: #4a2c00;
+            border: none;
+            border-radius: 50px;
+            cursor: pointer;
+            box-shadow: 0 8px 25px rgba(255, 180, 80, 0.5),
+                        inset 0 2px 0 rgba(255, 255, 255, 0.3),
+                        inset 0 -2px 0 rgba(0, 0, 0, 0.1);
+            transition: all 0.3s ease;
+            font-weight: bold;
+            letter-spacing: 3px;
+        }
+
+        #climbBtn:hover:not(:disabled) {
+            transform: translateX(-50%) translateY(-3px);
+            box-shadow: 0 12px 35px rgba(255, 180, 80, 0.7),
+                        inset 0 2px 0 rgba(255, 255, 255, 0.4);
+        }
+
+        #climbBtn:active:not(:disabled) {
+            transform: translateX(-50%) scale(0.96);
+        }
+
+        #climbBtn:disabled {
+            display: none;
+        }
+
+        #levelIndicator {
+            position: absolute;
+            top: 20px;
+            right: 30px;
+            z-index: 10;
+            color: rgba(255, 215, 150, 0.7);
+            font-size: 16px;
+            letter-spacing: 2px;
+        }
+    </style>
+</head>
+<body>
+    <div id="container">
+        <canvas id="bgCanvas"></canvas>
+        <canvas id="mainCanvas"></canvas>
+        <canvas id="transitionCanvas"></canvas>
+        <canvas id="climbCanvas"></canvas>
+        <div id="levelIndicator">第 1 层</div>
+        <div id="blessingText"></div>
+        <button id="climbBtn">向上攀登</button>
+    </div>
+
+    <script>
+    // ============================================
+    // 配置层
+    // ============================================
+    const CONFIG = {
+        transitionDuration: 3500,
+        climbStepDuration: 1200,
+        blessingShowDuration: 4000,
+        particleCount: 50,
+        levels: [
+            { name: '水晶洞穴', blessing: '妈妈，你的爱如水晶般纯净，折射出我生命所有的光彩。' },
+            { name: '冰原', blessing: '在寒冷的世界里，你是我永恒的暖阳。' },
+            { name: '大海', blessing: '愿你的心，如大海一般辽阔而温柔。' },
+            { name: '沙滩', blessing: '愿生活像沙滩上的脚印，每一步都通向幸福。' },
+            { name: '草原', blessing: '你的爱，是拂过草原的暖风，让我自由生长。' },
+            { name: '花海', blessing: '你是我生命中最美的花海，永远盛开。' },
+            { name: '星空', blessing: '妈妈，你就是我的星光，照亮我前行的路。' },
+            { name: '城市', blessing: '无论我走到哪个城市，有你的地方就是家。' },
+            { name: '天空', blessing: '妈妈，母亲节快乐！你值得拥有这世上最广阔的天空。' }
+        ]
+    };
+
+    // ============================================
+    // 全局状态
+    // ============================================
+    let currentLevel = 0;
+    let isTransitioning = false;
+    let animationTime = 0;
+    let globalParticles = [];
+    let levelParticles = [];
+    let transitionOpacity = 0;
+    let climbAnimationId = null;
+
+    // 场景粒子缓存
+    let sceneParticles = [];
+    let sceneInitialized = false;
+
+    // Canvas 元素
+    const bgCanvas = document.getElementById('bgCanvas');
+    const mainCanvas = document.getElementById('mainCanvas');
+    const transCanvas = document.getElementById('transitionCanvas');
+    const climbCanvas = document.getElementById('climbCanvas');
+    const bgCtx = bgCanvas.getContext('2d');
+    const ctx = mainCanvas.getContext('2d');
+    const transCtx = transCanvas.getContext('2d');
+    const climbCtx = climbCanvas.getContext('2d');
+
+    const blessingEl = document.getElementById('blessingText');
+    const climbBtn = document.getElementById('climbBtn');
+    const levelIndicator = document.getElementById('levelIndicator');
+
+    // ============================================
+    // 初始化函数
+    // ============================================
+    function init() {
+        resizeCanvas();
+        initGlobalParticles();
+        window.addEventListener('resize', resizeCanvas);
+        climbBtn.addEventListener('click', climbUp);
+        requestAnimationFrame(animate);
+    }
+
+    function resizeCanvas() {
+        const w = window.innerWidth;
+        const h = window.innerHeight;
+        [bgCanvas, mainCanvas, transCanvas, climbCanvas].forEach(c => {
+            c.width = w;
+            c.height = h;
+        });
+        initGlobalParticles();
+        sceneInitialized = false;
+    }
+
+    function initGlobalParticles() {
+        globalParticles = [];
+        for (let i = 0; i < CONFIG.particleCount; i++) {
+            globalParticles.push({
+                x: Math.random() * mainCanvas.width,
+                y: Math.random() * mainCanvas.height,
+                size: Math.random() * 3 + 1,
+                speedY: Math.random() * 0.3 + 0.1,
+                opacity: Math.random() * 0.5 + 0.3,
+                twinkle: Math.random() * Math.PI * 2
+            });
+        }
+    }
+
+    // 初始化场景粒子
+    function initSceneParticles(w, h) {
+        if (sceneInitialized && sceneParticles.level === currentLevel) return;
+        sceneParticles = { level: currentLevel };
+        sceneInitialized = true;
+
+        switch(currentLevel) {
+            case 0: // 水晶洞穴
+                sceneParticles.crystals = [];
+                for (let i = 0; i < 15; i++) {
+                    sceneParticles.crystals.push({
+                        x: Math.random() * w,
+                        y: h * 0.5 + Math.random() * h * 0.5,
+                        height: 60 + Math.random() * 120,
+                        width: 15 + Math.random() * 25,
+                        angle: -Math.PI/2 + (Math.random() - 0.5) * 0.6,
+                        hue: 260 + Math.random() * 60,
+                        phase: Math.random() * Math.PI * 2
+                    });
+                }
+                sceneParticles.fireflies = [];
+                for (let i = 0; i < 30; i++) {
+                    sceneParticles.fireflies.push({
+                        x: Math.random() * w,
+                        y: Math.random() * h,
+                        vx: (Math.random() - 0.5) * 0.5,
+                        vy: (Math.random() - 0.5) * 0.3,
+                        size: 2 + Math.random() * 3,
+                        phase: Math.random() * Math.PI * 2,
+                        hue: Math.random() * 60 + 30
+                    });
+                }
+                // 洞穴岩石数据
+                sceneParticles.caveRocks = [];
+                for (let layer = 0; layer < 3; layer++) {
+                    for (let i = 0; i < 20; i++) {
+                        sceneParticles.caveRocks.push({
+                            x: Math.random() * w,
+                            y: h * (0.3 + layer * 0.22) + Math.random() * h * 0.1,
+                            width: 40 + Math.random() * 80,
+                            height: 25 + Math.random() * 50,
+                            layer: layer,
+                            textureOffset: Math.random() * 100
+                        });
+                    }
+                }
+                break;
+
+            case 1: // 冰原
+                sceneParticles.snowflakes = [];
+                for (let i = 0; i < 80; i++) {
+                    sceneParticles.snowflakes.push({
+                        x: Math.random() * w,
+                        y: Math.random() * h,
+                        size: 1 + Math.random() * 3,
+                        speed: 0.3 + Math.random() * 0.7,
+                        wobble: Math.random() * Math.PI * 2,
+                        wobbleSpeed: 0.01 + Math.random() * 0.02
+                    });
+                }
+                sceneParticles.iceCracks = [];
+                for (let i = 0; i < 20; i++) {
+                    sceneParticles.iceCracks.push({
+                        x: Math.random() * w,
+                        y: h * 0.6 + Math.random() * h * 0.4,
+                        length: 20 + Math.random() * 60,
+                        angle: Math.random() * Math.PI * 2,
+                        branches: Math.floor(Math.random() * 3) + 1
+                    });
+                }
+                // 预计算冰川数据以消除每帧随机抖动
+                sceneParticles.glacierData = [
+                    { x: w * 0.08, baseY: h * 0.52, height: h * 0.12, width: w * 0.10 },
+                    { x: w * 0.22, baseY: h * 0.54, height: h * 0.18, width: w * 0.09 },
+                    { x: w * 0.38, baseY: h * 0.50, height: h * 0.15, width: w * 0.12 },
+                    { x: w * 0.55, baseY: h * 0.56, height: h * 0.20, width: w * 0.11 },
+                    { x: w * 0.72, baseY: h * 0.51, height: h * 0.14, width: w * 0.08 },
+                    { x: w * 0.85, baseY: h * 0.53, height: h * 0.16, width: w * 0.12 }
+                ];
+                sceneParticles.glacierEdgeOffsets = [];
+                for (let g = 0; g < 6; g++) {
+                    const edgePoints = [];
+                    for (let i = 0; i <= 8; i++) {
+                        edgePoints.push(Math.random() * 10);
+                    }
+                    sceneParticles.glacierEdgeOffsets.push(edgePoints);
+                }
+                break;
+
+            case 2: // 大海
+                sceneParticles.wavePoints = [];
+                for (let layer = 0; layer < 3; layer++) {
+                    for (let i = 0; i < 50; i++) {
+                        sceneParticles.wavePoints.push({
+                            x: (i / 50) * w,
+                            baseY: h * 0.5 + layer * 30,
+                            layer: layer,
+                            phase: Math.random() * Math.PI * 2
+                        });
+                    }
+                }
+                sceneParticles.seagulls = [];
+                for (let i = 0; i < 5; i++) {
+                    sceneParticles.seagulls.push({
+                        x: w * 0.2 + Math.random() * w * 0.6,
+                        y: h * 0.15 + Math.random() * h * 0.15,
+                        wingPhase: Math.random() * Math.PI * 2,
+                        speedX: 0.3 + Math.random() * 0.3,
+                        size: 12 + Math.random() * 8
+                    });
+                }
+                sceneParticles.splashes = [];
+                break;
+
+            case 3: // 沙滩
+                sceneParticles.foamParticles = [];
+                for (let i = 0; i < 40; i++) {
+                    sceneParticles.foamParticles.push({
+                        x: Math.random() * w,
+                        y: h * 0.52 + Math.random() * 20,
+                        size: 2 + Math.random() * 4,
+                        opacity: Math.random()
+                    });
+                }
+                sceneParticles.coconutTrees = [
+                    { x: w * 0.1, y: h * 0.35, sway: 0 },
+                    { x: w * 0.85, y: h * 0.38, sway: Math.PI }
+                ];
+                // 蜿蜒边界数据
+                sceneParticles.boundaryWavePhase = Math.random() * Math.PI * 2;
+                sceneParticles.boundaryPoints = [];
+                for (let i = 0; i <= 100; i++) {
+                    const bx = (i / 100) * w;
+                    const by = h * 0.52
+                        + Math.sin(bx * 0.008 + sceneParticles.boundaryWavePhase) * 12
+                        + Math.sin(bx * 0.02 + 1.5) * 6
+                        + Math.sin(bx * 0.035 + 2.8) * 3;
+                    sceneParticles.boundaryPoints.push({ x: bx, baseY: by });
+                }
+                break;
+
+            case 4: // 草原
+                sceneParticles.grassBlades = [];
+                for (let i = 0; i < 200; i++) {
+                    sceneParticles.grassBlades.push({
+                        x: Math.random() * w,
+                        y: h * 0.5 + Math.random() * h * 0.5,
+                        height: 15 + Math.random() * 25,
+                        phase: Math.random() * Math.PI * 2,
+                        hue: 80 + Math.random() * 40
+                    });
+                }
+                sceneParticles.wildflowers = [];
+                for (let i = 0; i < 50; i++) {
+                    sceneParticles.wildflowers.push({
+                        x: Math.random() * w,
+                        y: h * 0.55 + Math.random() * h * 0.4,
+                        size: 3 + Math.random() * 5,
+                        color: ['#fff', '#ffeb3b', '#fff59d', '#fff'][Math.floor(Math.random() * 4)],
+                        phase: Math.random() * Math.PI * 2
+                    });
+                }
+                sceneParticles.pollenParticles = [];
+                for (let i = 0; i < 30; i++) {
+                    sceneParticles.pollenParticles.push({
+                        x: Math.random() * w,
+                        y: Math.random() * h,
+                        size: 1 + Math.random() * 2,
+                        speedY: -0.2 - Math.random() * 0.3,
+                        drift: Math.random() * Math.PI * 2
+                    });
+                }
+                break;
+
+            case 5: // 花海
+                sceneParticles.flowerPatches = [];
+                const colors = [
+                    ['#9b59b6', '#8e44ad', '#7d3c98'], // 薰衣草紫
+                    ['#f1c40f', '#f39c12', '#e67e22'], // 向日葵黄
+                    ['#e91e63', '#ec407a', '#f48fb1'], // 玫瑰粉
+                    ['#fff', '#f5f5f5', '#eeeeee']     // 雏菊白
+                ];
+                for (let band = 0; band < 4; band++) {
+                    for (let i = 0; i < 40; i++) {
+                        sceneParticles.flowerPatches.push({
+                            x: Math.random() * w,
+                            y: h * 0.35 + band * h * 0.15 + Math.random() * h * 0.12,
+                            size: 4 + Math.random() * 7,
+                            colors: colors[band],
+                            phase: Math.random() * Math.PI * 2,
+                            rotationOffset: Math.random() * Math.PI * 0.3,
+                            petalSizeVariation: 0.8 + Math.random() * 0.4
+                        });
+                    }
+                }
+                sceneParticles.butterflies = [];
+                for (let i = 0; i < 12; i++) {
+                    sceneParticles.butterflies.push({
+                        x: Math.random() * w,
+                        y: h * 0.3 + Math.random() * h * 0.4,
+                        vx: (Math.random() - 0.5) * 2,
+                        vy: (Math.random() - 0.5) * 1.5,
+                        wingPhase: Math.random() * Math.PI * 2,
+                        color: ['#ff6b6b', '#4ecdc4', '#ffe66d', '#ff8fab'][Math.floor(Math.random() * 4)]
+                    });
+                }
+                sceneParticles.fallingPetals = [];
+                for (let i = 0; i < 15; i++) {
+                    sceneParticles.fallingPetals.push({
+                        x: Math.random() * w,
+                        y: Math.random() * h,
+                        rotation: Math.random() * Math.PI * 2,
+                        rotSpeed: (Math.random() - 0.5) * 0.05,
+                        speedY: 0.5 + Math.random() * 1,
+                        speedX: (Math.random() - 0.5) * 0.5,
+                        size: 4 + Math.random() * 6,
+                        color: ['#ffb6c1', '#ffc0cb', '#ff69b4', '#fff0f5'][Math.floor(Math.random() * 4)]
+                    });
+                }
+                break;
+
+            case 6: // 星空
+                sceneParticles.stars = [];
+                for (let i = 0; i < 200; i++) {
+                    sceneParticles.stars.push({
+                        x: Math.random() * w,
+                        y: Math.random() * h * 0.7,
+                        size: 0.5 + Math.random() * 2,
+                        brightness: Math.random(),
+                        twinkleSpeed: 0.002 + Math.random() * 0.005,
+                        twinklePhase: Math.random() * Math.PI * 2
+                    });
+                }
+                sceneParticles.shootingStars = [];
+                break;
+
+            case 7: // 城市
+                sceneParticles.buildings = [];
+                for (let i = 0; i < 15; i++) {
+                    sceneParticles.buildings.push({
+                        x: (i / 15) * w,
+                        width: w * 0.05 + Math.random() * w * 0.03,
+                        height: h * 0.3 + Math.random() * h * 0.35,
+                        windows: [],
+                        windowRows: 0,
+                        windowCols: 0
+                    });
+                    const b = sceneParticles.buildings[i];
+                    b.windowRows = Math.floor(b.height / 25);
+                    b.windowCols = Math.floor(b.width / 20);
+                    for (let r = 0; r < b.windowRows; r++) {
+                        for (let c = 0; c < b.windowCols; c++) {
+                            b.windows.push({
+                                lit: Math.random() > 0.3,
+                                flicker: Math.random() > 0.8,
+                                flickerPhase: Math.random() * Math.PI * 2
+                            });
+                        }
+                    }
+                }
+                sceneParticles.fireworks = [];
+                break;
+
+            case 8: // 天空
+                sceneParticles.clouds = [];
+                for (let i = 0; i < 8; i++) {
+                    sceneParticles.clouds.push({
+                        x: Math.random() * w * 1.5 - w * 0.25,
+                        y: h * 0.1 + Math.random() * h * 0.3,
+                        width: 80 + Math.random() * 120,
+                        height: 40 + Math.random() * 60,
+                        speed: 0.1 + Math.random() * 0.2,
+                        puffs: []
+                    });
+                    const cloud = sceneParticles.clouds[i];
+                    const puffCount = 4 + Math.floor(Math.random() * 4);
+                    for (let j = 0; j < puffCount; j++) {
+                        cloud.puffs.push({
+                            ox: (j - puffCount/2) * (cloud.width / puffCount) + (Math.random() - 0.5) * 20,
+                            oy: (Math.random() - 0.5) * cloud.height * 0.3,
+                            r: cloud.height * 0.3 + Math.random() * cloud.height * 0.2
+                        });
+                    }
+                }
+                sceneParticles.petals = [];
+                for (let i = 0; i < 40; i++) {
+                    sceneParticles.petals.push({
+                        x: Math.random() * w,
+                        y: Math.random() * h - h,
+                        size: 5 + Math.random() * 8,
+                        speedY: 0.8 + Math.random() * 1.2,
+                        speedX: (Math.random() - 0.5) * 0.8,
+                        rotation: Math.random() * Math.PI * 2,
+                        rotSpeed: (Math.random() - 0.5) * 0.03,
+                        wobble: Math.random() * Math.PI * 2,
+                        depth: Math.random() // 用于景深模糊
+                    });
+                }
+                break;
+        }
+    }
+
+    // ============================================
+    // 绘制函数集 - 石窗框架
+    // ============================================
+    function drawStoneWindow(ctx, w, h, time) {
+        const brightness = 0.3 + (currentLevel / CONFIG.levels.length) * 0.7;
+
+        // 石墙背景
+        const gradient = ctx.createRadialGradient(w/2, h/2, 0, w/2, h/2, Math.max(w, h) * 0.8);
+        gradient.addColorStop(0, `rgba(60, 50, 70, ${brightness})`);
+        gradient.addColorStop(1, 'rgba(20, 15, 25, 1)');
+        ctx.fillStyle = gradient;
+        ctx.fillRect(0, 0, w, h);
+
+        // 拱形窗口区域
+        const windowWidth = Math.min(w * 0.7, 800);
+        const windowHeight = h * 0.75;
+        const windowX = (w - windowWidth) / 2;
+        const windowY = h * 0.1;
+
+        ctx.save();
+        ctx.beginPath();
+        ctx.moveTo(windowX, h);
+        ctx.lineTo(windowX, windowY + windowHeight * 0.4);
+        ctx.quadraticCurveTo(windowX, windowY, windowX + windowWidth / 2, windowY);
+        ctx.quadraticCurveTo(windowX + windowWidth, windowY, windowX + windowWidth, windowY + windowHeight * 0.4);
+        ctx.lineTo(windowX + windowWidth, h);
+        ctx.closePath();
+        ctx.clip();
+
+        // 初始化并绘制当前层景色
+        initSceneParticles(w, h);
+        drawLevel(ctx, w, h, time);
+
+        ctx.restore();
+
+        // 绘制石窗边框
+        drawWindowFrame(ctx, w, h, windowX, windowY, windowWidth, windowHeight, time);
+        drawVines(ctx, windowX, windowY, windowWidth, windowHeight, time);
+    }
+
+    function drawWindowFrame(ctx, w, h, wx, wy, ww, wh, time) {
+        ctx.save();
+        ctx.shadowColor = 'rgba(0, 0, 0, 0.8)';
+        ctx.shadowBlur = 30;
+
+        const frameWidth = 25;
+
+        // 石框渐变
+        const frameGrad = ctx.createLinearGradient(wx, 0, wx + ww, 0);
+        frameGrad.addColorStop(0, '#4a4035');
+        frameGrad.addColorStop(0.5, '#5a5045');
+        frameGrad.addColorStop(1, '#4a4035');
+
+        ctx.fillStyle = frameGrad;
+        ctx.fillRect(wx - frameWidth, wy + wh * 0.4, frameWidth, h - wy - wh * 0.4);
+        ctx.fillRect(wx + ww, wy + wh * 0.4, frameWidth, h - wy - wh * 0.4);
+
+        // 拱形顶部
+        ctx.beginPath();
+        ctx.moveTo(wx - frameWidth, wy + wh * 0.4);
+        ctx.quadraticCurveTo(wx - frameWidth, wy - frameWidth, wx + ww / 2, wy - frameWidth);
+        ctx.quadraticCurveTo(wx + ww + frameWidth, wy - frameWidth, wx + ww + frameWidth, wy + wh * 0.4);
+        ctx.lineTo(wx + ww, wy + wh * 0.4);
+        ctx.quadraticCurveTo(wx + ww, wy, wx + ww / 2, wy);
+        ctx.quadraticCurveTo(wx, wy, wx, wy + wh * 0.4);
+        ctx.closePath();
+        ctx.fill();
+
+        drawBrickTexture(ctx, wx, wy, ww, wh, frameWidth);
+        ctx.restore();
+    }
+
+    function drawBrickTexture(ctx, wx, wy, ww, wh, frameWidth) {
+        ctx.save();
+        ctx.globalAlpha = 0.3;
+        ctx.strokeStyle = '#2a2520';
+        ctx.lineWidth = 1;
+
+        for (let y = wy + wh * 0.4; y < window.innerHeight; y += 20) {
+            ctx.strokeRect(wx - frameWidth, y, frameWidth, 20);
+            ctx.strokeRect(wx + ww, y, frameWidth, 20);
+        }
+        ctx.restore();
+    }
+
+    function drawVines(ctx, wx, wy, ww, wh, time) {
+        ctx.save();
+
+        const vineColor = `rgba(45, 80, 45, ${0.7 + currentLevel * 0.03})`;
+        ctx.strokeStyle = vineColor;
+        ctx.lineWidth = 4;
+        ctx.lineCap = 'round';
+
+        ctx.beginPath();
+        ctx.moveTo(wx + 10, wy + wh * 0.5);
+        for (let i = 0; i < 80; i++) {
+            const x = wx + 10 + Math.sin(i * 0.15 + time * 0.001) * 8;
+            const y = wy + wh * 0.5 + i * 2;
+            ctx.lineTo(x, y);
+        }
+        ctx.stroke();
+
+        ctx.beginPath();
+        ctx.moveTo(wx + ww - 10, wy + wh * 0.5);
+        for (let i = 0; i < 80; i++) {
+            const x = wx + ww - 10 + Math.sin(i * 0.15 + time * 0.001 + 1) * 8;
+            const y = wy + wh * 0.5 + i * 2;
+            ctx.lineTo(x, y);
+        }
+        ctx.stroke();
+
+        [0.2, 0.4, 0.6, 0.8].forEach((pos, idx) => {
+            const leafY = wy + wh * 0.5 + pos * 160;
+            const sway = Math.sin(time * 0.002 + idx) * 3;
+            drawLeaf(ctx, wx + 15 + sway, leafY, 0.6);
+            drawLeaf(ctx, wx + ww - 15 + sway, leafY, -0.6);
+        });
+
+        const glowGradient = ctx.createRadialGradient(wx + ww/2, wy, 0, wx + ww/2, wy, 150);
+        glowGradient.addColorStop(0, `rgba(255, 220, 150, ${0.2 + Math.sin(time * 0.002) * 0.1})`);
+        glowGradient.addColorStop(1, 'rgba(255, 220, 150, 0)');
+        ctx.fillStyle = glowGradient;
+        ctx.fillRect(wx, wy, ww, 150);
+
+        ctx.restore();
+    }
+
+    function drawLeaf(ctx, x, y, rotation) {
+        ctx.save();
+        ctx.translate(x, y);
+        ctx.rotate(rotation);
+        ctx.fillStyle = 'rgba(60, 100, 50, 0.8)';
+        ctx.beginPath();
+        ctx.moveTo(0, 0);
+        ctx.quadraticCurveTo(8, -5, 15, 0);
+        ctx.quadraticCurveTo(8, 5, 0, 0);
+        ctx.fill();
+        ctx.restore();
+    }
+
+    // ============================================
+    // 绘制函数集 - 景色层
+    // ============================================
+    function drawLevel(ctx, w, h, time) {
+        switch(currentLevel) {
+            case 0: drawCrystalCave(ctx, w, h, time); break;
+            case 1: drawIceField(ctx, w, h, time); break;
+            case 2: drawOcean(ctx, w, h, time); break;
+            case 3: drawBeach(ctx, w, h, time); break;
+            case 4: drawGrassland(ctx, w, h, time); break;
+            case 5: drawFlowerField(ctx, w, h, time); break;
+            case 6: drawStarrySky(ctx, w, h, time); break;
+            case 7: drawCity(ctx, w, h, time); break;
+            case 8: drawSky(ctx, w, h, time); break;
+        }
+    }
+
+    // ============================================
+    // 1. 水晶洞穴 - 蓝紫色水晶、彩虹折射、流光、萤火虫粒子
+    // ============================================
+    function drawCrystalCave(ctx, w, h, time) {
+        // 深邃的洞穴背景
+        const bgGrad = ctx.createRadialGradient(w/2, h/2, 0, w/2, h/2, w);
+        bgGrad.addColorStop(0, '#1a0a2e');
+        bgGrad.addColorStop(0.4, '#0d0520');
+        bgGrad.addColorStop(1, '#050210');
+        ctx.fillStyle = bgGrad;
+        ctx.fillRect(0, 0, w, h);
+
+        // 洞穴深处的幽蓝光晕
+        const depthGlow = ctx.createRadialGradient(w * 0.3, h * 0.4, 0, w * 0.3, h * 0.4, w * 0.5);
+        depthGlow.addColorStop(0, 'rgba(80, 120, 200, 0.15)');
+        depthGlow.addColorStop(1, 'transparent');
+        ctx.fillStyle = depthGlow;
+        ctx.fillRect(0, 0, w, h);
+
+        // 绘制洞穴岩石
+        drawCaveRocks(ctx, w, h, time);
+
+        // 绘制水晶
+        const crystals = sceneParticles.crystals || [];
+        crystals.forEach((crystal, idx) => {
+            drawDetailedCrystal(ctx, crystal.x, crystal.y, crystal.height, crystal.width,
+                               crystal.angle, crystal.hue, crystal.phase, time, idx);
+        });
+
+        // 萤火虫般的粒子
+        const fireflies = sceneParticles.fireflies || [];
+        fireflies.forEach(fly => {
+            // 更新位置
+            fly.x += fly.vx + Math.sin(time * 0.001 + fly.phase) * 0.3;
+            fly.y += fly.vy + Math.cos(time * 0.0015 + fly.phase) * 0.2;
+
+            // 边界循环
+            if (fly.x < 0) fly.x = w;
+            if (fly.x > w) fly.x = 0;
+            if (fly.y < 0) fly.y = h;
+            if (fly.y > h) fly.y = 0;
+
+            const pulse = Math.sin(time * 0.003 + fly.phase) * 0.5 + 0.5;
+
+            // 外发光
+            const glow = ctx.createRadialGradient(fly.x, fly.y, 0, fly.x, fly.y, fly.size * 8);
+            glow.addColorStop(0, `hsla(${fly.hue}, 100%, 70%, ${pulse * 0.4})`);
+            glow.addColorStop(0.5, `hsla(${fly.hue}, 100%, 60%, ${pulse * 0.15})`);
+            glow.addColorStop(1, 'transparent');
+            ctx.fillStyle = glow;
+            ctx.fillRect(fly.x - fly.size * 8, fly.y - fly.size * 8, fly.size * 16, fly.size * 16);
+
+            // 核心
+            ctx.beginPath();
+            ctx.arc(fly.x, fly.y, fly.size * pulse, 0, Math.PI * 2);
+            ctx.fillStyle = `hsla(${fly.hue}, 100%, 85%, ${0.8 + pulse * 0.2})`;
+            ctx.fill();
+        });
+
+        // 漂浮的彩虹光斑
+        for (let i = 0; i < 15; i++) {
+            const x = (Math.sin(time * 0.0003 + i * 0.7) * 0.5 + 0.5) * w;
+            const y = (Math.cos(time * 0.0004 + i * 0.5) * 0.5 + 0.5) * h;
+            const hue = (time * 0.02 + i * 40) % 360;
+            const size = 30 + Math.sin(time * 0.001 + i) * 15;
+
+            const spotGrad = ctx.createRadialGradient(x, y, 0, x, y, size);
+            spotGrad.addColorStop(0, `hsla(${hue}, 80%, 60%, 0.3)`);
+            spotGrad.addColorStop(0.5, `hsla(${hue + 30}, 70%, 50%, 0.1)`);
+            spotGrad.addColorStop(1, 'transparent');
+            ctx.fillStyle = spotGrad;
+            ctx.beginPath();
+            ctx.arc(x, y, size, 0, Math.PI * 2);
+            ctx.fill();
+        }
+    }
+
+    function drawCaveRocks(ctx, w, h, time) {
+        const rocks = sceneParticles.caveRocks || [];
+        rocks.sort((a, b) => a.layer - b.layer);
+
+        rocks.forEach(rock => {
+            const depth = 1 - rock.layer * 0.25;
+            const baseGray = 40 + rock.layer * 15;
+
+            const rockGrad = ctx.createLinearGradient(
+                rock.x, rock.y,
+                rock.x + rock.width, rock.y + rock.height
+            );
+            rockGrad.addColorStop(0, `rgba(${baseGray}, ${baseGray + 5}, ${baseGray + 15}, ${0.8 * depth})`);
+            rockGrad.addColorStop(0.5, `rgba(${baseGray + 10}, ${baseGray + 15}, ${baseGray + 25}, ${0.85 * depth})`);
+            rockGrad.addColorStop(1, `rgba(${baseGray - 5}, ${baseGray}, ${baseGray + 10}, ${0.75 * depth})`);
+
+            ctx.fillStyle = rockGrad;
+            ctx.beginPath();
+            const points = 8;
+            for (let i = 0; i <= points; i++) {
+                const angle = (i / points) * Math.PI * 2;
+                const rx = rock.width * (0.4 + Math.sin(rock.textureOffset + i * 2) * 0.15);
+                const ry = rock.height * (0.3 + Math.cos(rock.textureOffset + i * 1.5) * 0.15);
+                const px = rock.x + rock.width / 2 + Math.cos(angle) * rx;
+                const py = rock.y + rock.height / 2 + Math.sin(angle) * ry;
+                if (i === 0) ctx.moveTo(px, py);
+                else ctx.lineTo(px, py);
+            }
+            ctx.closePath();
+            ctx.fill();
+
+            // 层叠纹理线
+            ctx.strokeStyle = `rgba(30, 35, 45, ${0.3 * depth})`;
+            ctx.lineWidth = 0.5;
+            for (let j = 0; j < 5; j++) {
+                const yOff = rock.y + rock.height * (0.2 + j * 0.15);
+                ctx.beginPath();
+                ctx.moveTo(rock.x + rock.width * 0.1, yOff);
+                ctx.bezierCurveTo(
+                    rock.x + rock.width * 0.3, yOff + Math.sin(rock.textureOffset + j) * 3,
+                    rock.x + rock.width * 0.7, yOff - Math.sin(rock.textureOffset + j + 1) * 3,
+                    rock.x + rock.width * 0.9, yOff
+                );
+                ctx.stroke();
+            }
+
+            // 颗粒感暗点
+            for (let k = 0; k < 8; k++) {
+                const spotX = rock.x + (rock.textureOffset * 7 + k * 37) % rock.width;
+                const spotY = rock.y + (rock.textureOffset * 13 + k * 23) % rock.height;
+                const spotR = 1.5 + (rock.textureOffset + k) % 4;
+                ctx.fillStyle = `rgba(20, 22, 30, ${0.15 * depth})`;
+                ctx.beginPath();
+                ctx.arc(spotX, spotY, spotR, 0, Math.PI * 2);
+                ctx.fill();
+            }
+
+            // 暗蓝青色反光
+            if (rock.layer >= 1) {
+                const reflectX = rock.x + rock.width * 0.25 + (rock.textureOffset % 0.5) * rock.width;
+                const reflectY = rock.y + rock.height * 0.35;
+                const reflectGrad = ctx.createRadialGradient(reflectX, reflectY, 0, reflectX, reflectY, 25);
+                reflectGrad.addColorStop(0, `rgba(60, 100, 130, ${0.12 * depth})`);
+                reflectGrad.addColorStop(1, 'transparent');
+                ctx.fillStyle = reflectGrad;
+                ctx.beginPath();
+                ctx.arc(reflectX, reflectY, 25, 0, Math.PI * 2);
+                ctx.fill();
+            }
+        });
+    }
+
+    function drawDetailedCrystal(ctx, x, y, height, width, angle, hue, phase, time, idx) {
+        ctx.save();
+        ctx.translate(x, y);
+        ctx.rotate(angle);
+
+        const shimmer = Math.sin(time * 0.001 + phase) * 0.3 + 0.7;
+        const flowLight = (time * 0.001 + idx * 0.3) % 1;
+
+        // 主晶体
+        const crystalGrad = ctx.createLinearGradient(0, 0, 0, -height);
+        crystalGrad.addColorStop(0, `hsla(${hue}, 60%, 25%, 0.9)`);
+        crystalGrad.addColorStop(0.3, `hsla(${hue}, 70%, 40%, 0.85)`);
+        crystalGrad.addColorStop(flowLight, `hsla(${hue + 30}, 80%, 70%, 0.95)`); // 流光位置
+        crystalGrad.addColorStop(0.6, `hsla(${hue}, 65%, 35%, 0.85)`);
+        crystalGrad.addColorStop(1, `hsla(${hue - 20}, 50%, 20%, 0.8)`);
+
+        ctx.fillStyle = crystalGrad;
+        ctx.beginPath();
+        ctx.moveTo(-width, 0);
+        ctx.lineTo(-width * 0.3, -height * 0.3);
+        ctx.lineTo(0, -height);
+        ctx.lineTo(width * 0.3, -height * 0.3);
+        ctx.lineTo(width, 0);
+        ctx.closePath();
+        ctx.fill();
+
+        // 棱角高光
+        ctx.strokeStyle = `rgba(255, 255, 255, ${0.3 * shimmer})`;
+        ctx.lineWidth = 1;
+        ctx.beginPath();
+        ctx.moveTo(0, 0);
+        ctx.lineTo(0, -height);
+        ctx.stroke();
+
+        // 星芒闪烁
+        if (Math.sin(time * 0.005 + idx * 2) > 0.7) {
+            const starX = 0;
+            const starY = -height * (0.3 + Math.random() * 0.4);
+            drawStarSparkle(ctx, starX, starY, 8 + Math.random() * 6, `hsla(${hue + 40}, 100%, 80%, 0.9)`);
+        }
+
+        ctx.restore();
+    }
+
+    function drawStarSparkle(ctx, x, y, size, color) {
+        ctx.save();
+        ctx.strokeStyle = color;
+        ctx.lineWidth = 2;
+
+        // 四芒星
+        for (let i = 0; i < 4; i++) {
+            const angle = (i / 4) * Math.PI;
+            ctx.beginPath();
+            ctx.moveTo(x + Math.cos(angle) * size * 0.2, y + Math.sin(angle) * size * 0.2);
+            ctx.lineTo(x + Math.cos(angle) * size, y + Math.sin(angle) * size);
+            ctx.stroke();
+        }
+
+        // 中心光点
+        ctx.fillStyle = color;
+        ctx.beginPath();
+        ctx.arc(x, y, size * 0.15, 0, Math.PI * 2);
+        ctx.fill();
+
+        ctx.restore();
+    }
+
+    // ============================================
+    // 2. 冰原 - 冰面纹理、裂纹、极光、冰晶雪花
+    // ============================================
+    function drawIceField(ctx, w, h, time) {
+        // 天空渐变
+        const skyGrad = ctx.createLinearGradient(0, 0, 0, h);
+        skyGrad.addColorStop(0, '#0a0f2a');
+        skyGrad.addColorStop(0.3, '#0f1a40');
+        skyGrad.addColorStop(0.5, '#1a237e');
+        skyGrad.addColorStop(1, '#4a148c');
+        ctx.fillStyle = skyGrad;
+        ctx.fillRect(0, 0, w, h);
+
+        // 极光
+        drawAurora(ctx, w, h, time);
+
+        // 远处冰川
+        drawGlaciers(ctx, w, h, time);
+
+        // 冰原地面
+        const iceGrad = ctx.createLinearGradient(0, h * 0.55, 0, h);
+        iceGrad.addColorStop(0, '#c8dce8');
+        iceGrad.addColorStop(0.3, '#b8d0e0');
+        iceGrad.addColorStop(0.6, '#a8c4d8');
+        iceGrad.addColorStop(1, '#90b8d0');
+        ctx.fillStyle = iceGrad;
+        ctx.fillRect(0, h * 0.55, w, h * 0.45);
+
+        // 冰面纹理和裂纹
+        drawIceTexture(ctx, w, h, time);
+
+        // 冰晶雪花
+        const snowflakes = sceneParticles.snowflakes || [];
+        snowflakes.forEach(flake => {
+            flake.y += flake.speed;
+            flake.wobble += flake.wobbleSpeed;
+            flake.x += Math.sin(flake.wobble) * 0.5;
+
+            if (flake.y > h + 10) {
+                flake.y = -10;
+                flake.x = Math.random() * w;
+            }
+
+            const depth = flake.size / 4;
+            const blur = depth > 2 ? 0.6 : 1;
+
+            // 动态模糊效果（较大的雪花）
+            ctx.save();
+            if (depth > 1.5) {
+                ctx.globalAlpha = 0.3;
+                ctx.fillStyle = '#e0f0ff';
+                ctx.beginPath();
+                ctx.ellipse(flake.x, flake.y - flake.speed * 2, flake.size * 1.5, flake.size, 0, 0, Math.PI * 2);
+                ctx.fill();
+            }
+
+            ctx.globalAlpha = blur;
+            const snowGrad = ctx.createRadialGradient(flake.x, flake.y, 0, flake.x, flake.y, flake.size * 2);
+            snowGrad.addColorStop(0, 'rgba(255, 255, 255, 0.9)');
+            snowGrad.addColorStop(0.5, 'rgba(220, 240, 255, 0.5)');
+            snowGrad.addColorStop(1, 'transparent');
+            ctx.fillStyle = snowGrad;
+            ctx.beginPath();
+            ctx.arc(flake.x, flake.y, flake.size * 2, 0, Math.PI * 2);
+            ctx.fill();
+            ctx.restore();
+        });
+    }
+
+    function drawAurora(ctx, w, h, time) {
+        ctx.save();
+        ctx.globalCompositeOperation = 'lighter';
+
+        const colors = [
+            { h: 140, s: 100, l: 50 }, // 翠绿
+            { h: 160, s: 90, l: 55 },  // 青绿
+            { h: 180, s: 80, l: 50 },  // 青色
+            { h: 270, s: 70, l: 60 },  // 紫罗兰
+            { h: 300, s: 80, l: 55 }   // 紫色
+        ];
+
+        for (let i = 0; i < 5; i++) {
+            const color = colors[i];
+            ctx.beginPath();
+            ctx.moveTo(0, h * 0.15 + i * 15);
+
+            for (let x = 0; x <= w; x += 5) {
+                const wave = Math.sin(x * 0.003 + time * 0.0008 + i * 0.5) * 40
+                           + Math.sin(x * 0.007 + time * 0.001 + i) * 20;
+                const y = h * 0.15 + wave + i * 15;
+                ctx.lineTo(x, y);
+            }
+
+            ctx.lineTo(w, 0);
+            ctx.lineTo(0, 0);
+            ctx.closePath();
+
+            const grad = ctx.createLinearGradient(0, 0, 0, h * 0.4);
+            grad.addColorStop(0, 'transparent');
+            grad.addColorStop(0.3, `hsla(${color.h}, ${color.s}%, ${color.l}%, 0.25)`);
+            grad.addColorStop(0.6, `hsla(${color.h}, ${color.s}%, ${color.l}%, 0.15)`);
+            grad.addColorStop(1, 'transparent');
+            ctx.fillStyle = grad;
+            ctx.fill();
+        }
+
+        ctx.restore();
+    }
+
+    function drawGlaciers(ctx, w, h, time) {
+        const glaciers = sceneParticles.glacierData || [
+            { x: w * 0.1, baseY: h * 0.55, height: h * 0.15, width: w * 0.12 },
+            { x: w * 0.25, baseY: h * 0.55, height: h * 0.2, width: w * 0.08 },
+            { x: w * 0.55, baseY: h * 0.55, height: h * 0.18, width: w * 0.1 },
+            { x: w * 0.75, baseY: h * 0.55, height: h * 0.12, width: w * 0.07 },
+            { x: w * 0.85, baseY: h * 0.55, height: h * 0.22, width: w * 0.15 }
+        ];
+        const edgeOffsets = sceneParticles.glacierEdgeOffsets || [];
+
+        glaciers.forEach((g, idx) => {
+            const iceGrad = ctx.createLinearGradient(g.x, g.baseY - g.height, g.x, g.baseY);
+            iceGrad.addColorStop(0, 'rgba(150, 200, 230, 0.7)');
+            iceGrad.addColorStop(0.3, 'rgba(100, 170, 210, 0.8)');
+            iceGrad.addColorStop(0.7, 'rgba(80, 150, 190, 0.85)');
+            iceGrad.addColorStop(1, 'rgba(60, 120, 160, 0.9)');
+
+            ctx.fillStyle = iceGrad;
+            ctx.beginPath();
+            ctx.moveTo(g.x, g.baseY);
+
+            // 不规则的冰川边缘（使用预计算偏移，消除每帧随机抖动）
+            const points = 8;
+            const offsets = edgeOffsets[idx] || [];
+            for (let i = 0; i <= points; i++) {
+                const px = g.x + (i / points) * g.width;
+                const py = g.baseY - g.height * (0.7 + Math.sin(i * 1.5 + idx) * 0.3);
+                const offset = offsets[i] || 0;
+                if (i === 0) ctx.lineTo(px, py);
+                else ctx.lineTo(px, py + offset);
+            }
+            ctx.lineTo(g.x + g.width, g.baseY);
+            ctx.closePath();
+            ctx.fill();
+
+            // 冰川高光
+            ctx.fillStyle = 'rgba(200, 230, 250, 0.3)';
+            ctx.beginPath();
+            ctx.moveTo(g.x + g.width * 0.2, g.baseY - g.height * 0.6);
+            ctx.lineTo(g.x + g.width * 0.4, g.baseY - g.height * 0.8);
+            ctx.lineTo(g.x + g.width * 0.35, g.baseY - g.height * 0.5);
+            ctx.closePath();
+            ctx.fill();
+        });
+
+        // 绘制起伏地平线：雪丘、远山、冰塔林
+        drawUndulatingHorizon(ctx, w, h, time);
+    }
+
+    function drawUndulatingHorizon(ctx, w, h, time) {
+        // 远层：连绵雪丘
+        ctx.fillStyle = 'rgba(180, 200, 220, 0.6)';
+        ctx.beginPath();
+        ctx.moveTo(0, h * 0.58);
+        for (let x = 0; x <= w; x += 4) {
+            const hillY = h * 0.50
+                + Math.sin(x * 0.004) * 15
+                + Math.sin(x * 0.008 + 1) * 8
+                + Math.sin(x * 0.015 + 2) * 4;
+            ctx.lineTo(x, hillY);
+        }
+        ctx.lineTo(w, h * 0.58);
+        ctx.lineTo(0, h * 0.58);
+        ctx.closePath();
+        ctx.fill();
+
+        // 中层：锯齿状远山
+        ctx.fillStyle = 'rgba(100, 130, 160, 0.5)';
+        ctx.beginPath();
+        ctx.moveTo(0, h * 0.52);
+        const mountainPeaks = [
+            { x: 0.03, y: 0.38 }, { x: 0.10, y: 0.42 }, { x: 0.16, y: 0.35 },
+            { x: 0.23, y: 0.40 }, { x: 0.30, y: 0.36 }, { x: 0.38, y: 0.43 },
+            { x: 0.45, y: 0.37 }, { x: 0.52, y: 0.41 }, { x: 0.60, y: 0.34 },
+            { x: 0.68, y: 0.39 }, { x: 0.76, y: 0.44 }, { x: 0.83, y: 0.38 },
+            { x: 0.91, y: 0.42 }, { x: 0.97, y: 0.40 }
+        ];
+        mountainPeaks.forEach((peak, i) => {
+            ctx.lineTo(peak.x * w, peak.y * h);
+            if (i % 3 === 0 && peak.y < 0.4) {
+                ctx.lineTo(peak.x * w + 3, peak.y * h - 15);
+                ctx.lineTo(peak.x * w - 3, peak.y * h - 18);
+                ctx.lineTo(peak.x * w, peak.y * h);
+            }
+        });
+        ctx.lineTo(w, h * 0.52);
+        ctx.lineTo(0, h * 0.52);
+        ctx.closePath();
+        ctx.fill();
+
+        // 近层：冰塔林剪影
+        ctx.fillStyle = 'rgba(60, 100, 140, 0.7)';
+        for (let i = 0; i < 12; i++) {
+            const tx = w * (0.08 + i * 0.07);
+            const towerHeight = 30 + Math.sin(i * 2.5) * 20;
+            const baseY = h * 0.54;
+            ctx.beginPath();
+            ctx.moveTo(tx - 4, baseY);
+            ctx.lineTo(tx, baseY - towerHeight);
+            ctx.lineTo(tx + 4, baseY);
+            ctx.closePath();
+            ctx.fill();
+        }
+    }
+
+    function drawIceTexture(ctx, w, h, time) {
+        const cracks = sceneParticles.iceCracks || [];
+
+        // 绘制裂纹
+        ctx.save();
+        cracks.forEach(crack => {
+            ctx.strokeStyle = 'rgba(180, 210, 230, 0.4)';
+            ctx.lineWidth = 1;
+            ctx.beginPath();
+            ctx.moveTo(crack.x, crack.y);
+
+            let cx = crack.x;
+            let cy = crack.y;
+            for (let i = 0; i < crack.branches; i++) {
+                const branchAngle = crack.angle + (Math.random() - 0.5) * 0.5;
+                const length = crack.length * (0.5 + Math.random() * 0.5);
+                cx += Math.cos(branchAngle) * length;
+                cy += Math.sin(branchAngle) * length * 0.3;
+                ctx.lineTo(cx, cy);
+
+                // 分支
+                if (Math.random() > 0.5) {
+                    ctx.moveTo(cx, cy);
+                    const bAngle = branchAngle + (Math.random() - 0.5) * 1;
+                    ctx.lineTo(cx + Math.cos(bAngle) * length * 0.3, cy + Math.sin(bAngle) * length * 0.15);
+                    ctx.moveTo(cx, cy);
+                }
+            }
+            ctx.stroke();
+        });
+
+        // 冰面反光
+        for (let i = 0; i < 20; i++) {
+            const rx = Math.sin(time * 0.0005 + i * 0.7) * w * 0.4 + w * 0.5;
+            const ry = h * 0.6 + i * 15;
+            const rw = 30 + Math.sin(time * 0.001 + i) * 10;
+            const rh = 5;
+
+            ctx.fillStyle = `rgba(220, 240, 255, ${0.1 + Math.sin(time * 0.002 + i) * 0.05})`;
+            ctx.beginPath();
+            ctx.ellipse(rx, ry, rw, rh, 0, 0, Math.PI * 2);
+            ctx.fill();
+        }
+
+        ctx.restore();
+    }
+
+    // ============================================
+    // 3. 大海 - 三层波浪、泡沫、海鸥、波光粼粼
+    // ============================================
+    function drawOcean(ctx, w, h, time) {
+        // 夕阳天空
+        const skyGrad = ctx.createLinearGradient(0, 0, 0, h * 0.5);
+        skyGrad.addColorStop(0, '#ff6b6b');
+        skyGrad.addColorStop(0.2, '#ff8e72');
+        skyGrad.addColorStop(0.4, '#ffa07a');
+        skyGrad.addColorStop(0.6, '#ffb088');
+        skyGrad.addColorStop(0.8, '#ffd0a0');
+        skyGrad.addColorStop(1, '#ffe4c4');
+        ctx.fillStyle = skyGrad;
+        ctx.fillRect(0, 0, w, h);
+
+        // 太阳
+        const sunX = w * 0.65;
+        const sunY = h * 0.3;
+        drawSunsetSun(ctx, sunX, sunY, 70, time);
+
+        // 云彩
+        drawSunsetClouds(ctx, w, h, time);
+
+        // 三层海浪
+        drawDetailedWaves(ctx, w, h, time);
+
+        // 海鸥
+        const seagulls = sceneParticles.seagulls || [];
+        seagulls.forEach(bird => {
+            bird.x += bird.speedX;
+            bird.wingPhase += 0.05;
+
+            if (bird.x > w + 50) {
+                bird.x = -50;
+                bird.y = h * 0.1 + Math.random() * h * 0.2;
+            }
+
+            const wingAngle = Math.sin(bird.wingPhase) * 0.4;
+            drawDetailedSeagull(ctx, bird.x, bird.y, bird.size, wingAngle);
+        });
+
+        // 波光粼粼
+        drawSparkles(ctx, w, h, time);
+    }
+
+    function drawSunsetSun(ctx, x, y, size, time) {
+        // 外层光晕
+        const outerGlow = ctx.createRadialGradient(x, y, 0, x, y, size * 2);
+        outerGlow.addColorStop(0, 'rgba(255, 200, 150, 0.8)');
+        outerGlow.addColorStop(0.3, 'rgba(255, 180, 120, 0.4)');
+        outerGlow.addColorStop(0.6, 'rgba(255, 150, 100, 0.15)');
+        outerGlow.addColorStop(1, 'transparent');
+        ctx.fillStyle = outerGlow;
+        ctx.fillRect(x - size * 2, y - size * 2, size * 4, size * 4);
+
+        // 太阳本体
+        const sunGrad = ctx.createRadialGradient(x, y, 0, x, y, size);
+        sunGrad.addColorStop(0, '#fff8e0');
+        sunGrad.addColorStop(0.3, '#ffe4a0');
+        sunGrad.addColorStop(0.7, '#ffc060');
+        sunGrad.addColorStop(1, '#ff9040');
+        ctx.fillStyle = sunGrad;
+        ctx.beginPath();
+        ctx.arc(x, y, size, 0, Math.PI * 2);
+        ctx.fill();
+    }
+
+    function drawSunsetClouds(ctx, w, h, time) {
+        const clouds = [
+            { x: w * 0.2, y: h * 0.15, size: 40 },
+            { x: w * 0.5, y: h * 0.1, size: 50 },
+            { x: w * 0.8, y: h * 0.18, size: 35 }
+        ];
+
+        clouds.forEach((cloud, idx) => {
+            const shift = Math.sin(time * 0.0005 + idx) * 10;
+            const cloudGrad = ctx.createRadialGradient(cloud.x + shift, cloud.y, 0, cloud.x + shift, cloud.y, cloud.size);
+            cloudGrad.addColorStop(0, 'rgba(255, 220, 180, 0.6)');
+            cloudGrad.addColorStop(0.5, 'rgba(255, 200, 160, 0.4)');
+            cloudGrad.addColorStop(1, 'transparent');
+            ctx.fillStyle = cloudGrad;
+
+            // 简单云朵形状
+            for (let i = 0; i < 5; i++) {
+                const cx = cloud.x + shift + (i - 2) * cloud.size * 0.5;
+                const cy = cloud.y + Math.sin(i * 1.5) * 10;
+                ctx.beginPath();
+                ctx.arc(cx, cy, cloud.size * 0.4, 0, Math.PI * 2);
+                ctx.fill();
+            }
+        });
+    }
+
+    function drawDetailedWaves(ctx, w, h, time) {
+        const horizon = h * 0.48;
+
+        // 远景浪（最浅）
+        ctx.fillStyle = 'rgba(100, 140, 170, 0.6)';
+        ctx.beginPath();
+        ctx.moveTo(0, horizon);
+        for (let x = 0; x <= w; x += 3) {
+            const y = horizon + Math.sin(x * 0.008 + time * 0.001) * 5
+                    + Math.sin(x * 0.015 + time * 0.0015) * 3;
+            ctx.lineTo(x, y);
+        }
+        ctx.lineTo(w, h * 0.52);
+        ctx.lineTo(0, h * 0.52);
+        ctx.closePath();
+        ctx.fill();
+
+        // 中景浪
+        const midY = h * 0.55;
+        const midGrad = ctx.createLinearGradient(0, midY - 20, 0, midY + 40);
+        midGrad.addColorStop(0, 'rgba(70, 120, 150, 0.7)');
+        midGrad.addColorStop(1, 'rgba(50, 90, 120, 0.8)');
+        ctx.fillStyle = midGrad;
+        ctx.beginPath();
+        ctx.moveTo(0, midY - 20);
+        for (let x = 0; x <= w; x += 3) {
+            const y = midY - 20 + Math.sin(x * 0.01 + time * 0.002) * 12
+                    + Math.sin(x * 0.02 + time * 0.0025) * 6;
+            ctx.lineTo(x, y);
+        }
+        ctx.lineTo(w, midY + 40);
+        ctx.lineTo(0, midY + 40);
+        ctx.closePath();
+        ctx.fill();
+
+        // 近景浪（带泡沫）
+        const nearY = h * 0.65;
+        const nearGrad = ctx.createLinearGradient(0, nearY - 30, 0, h);
+        nearGrad.addColorStop(0, 'rgba(60, 100, 130, 0.8)');
+        nearGrad.addColorStop(0.5, 'rgba(40, 80, 110, 0.85)');
+        nearGrad.addColorStop(1, 'rgba(30, 60, 90, 0.9)');
+        ctx.fillStyle = nearGrad;
+        ctx.beginPath();
+        ctx.moveTo(0, nearY - 30);
+        for (let x = 0; x <= w; x += 3) {
+            const y = nearY - 30 + Math.sin(x * 0.012 + time * 0.003) * 18
+                    + Math.sin(x * 0.025 + time * 0.0035) * 8;
+            ctx.lineTo(x, y);
+        }
+        ctx.lineTo(w, h);
+        ctx.lineTo(0, h);
+        ctx.closePath();
+        ctx.fill();
+
+        // 浪花泡沫
+        for (let x = 0; x < w; x += 15) {
+            const foamY = nearY - 25 + Math.sin(x * 0.012 + time * 0.003) * 18;
+            const foamOpacity = Math.max(0, Math.sin(x * 0.02 + time * 0.004));
+
+            ctx.fillStyle = `rgba(255, 255, 255, ${foamOpacity * 0.7})`;
+            ctx.beginPath();
+            ctx.ellipse(x, foamY, 8 + Math.random() * 5, 3, 0, 0, Math.PI * 2);
+            ctx.fill();
+        }
+
+        // 水珠飞溅
+        if (Math.random() > 0.95) {
+            const splashX = Math.random() * w;
+            const splashY = h * 0.6 + Math.random() * h * 0.2;
+            for (let i = 0; i < 5; i++) {
+                const angle = Math.random() * Math.PI;
+                const dist = Math.random() * 15;
+                ctx.fillStyle = 'rgba(200, 230, 255, 0.6)';
+                ctx.beginPath();
+                ctx.arc(splashX + Math.cos(angle) * dist, splashY - Math.sin(angle) * dist, 1.5, 0, Math.PI * 2);
+                ctx.fill();
+            }
+        }
+    }
+
+    function drawDetailedSeagull(ctx, x, y, size, wingAngle) {
+        ctx.save();
+        ctx.translate(x, y);
+        ctx.strokeStyle = 'rgba(30, 30, 30, 0.8)';
+        ctx.lineWidth = 2;
+        ctx.lineCap = 'round';
+
+        // 左翅
+        ctx.save();
+        ctx.rotate(-wingAngle);
+        ctx.beginPath();
+        ctx.moveTo(0, 0);
+        ctx.quadraticCurveTo(-size * 0.5, -size * 0.3, -size, -size * 0.1);
+        ctx.stroke();
+        ctx.restore();
+
+        // 右翅
+        ctx.save();
+        ctx.rotate(wingAngle);
+        ctx.beginPath();
+        ctx.moveTo(0, 0);
+        ctx.quadraticCurveTo(size * 0.5, -size * 0.3, size, -size * 0.1);
+        ctx.stroke();
+        ctx.restore();
+
+        // 身体
+        ctx.beginPath();
+        ctx.ellipse(0, 0, size * 0.15, size * 0.08, 0, 0, Math.PI * 2);
+        ctx.stroke();
+
+        ctx.restore();
+    }
+
+    function drawSparkles(ctx, w, h, time) {
+        for (let i = 0; i < 30; i++) {
+            const x = (i * 67 + time * 0.01) % w;
+            const baseY = h * 0.55 + (i * 23) % (h * 0.3);
+            const waveY = Math.sin(x * 0.01 + time * 0.002) * 15;
+            const y = baseY + waveY;
+
+            const sparkle = Math.sin(time * 0.008 + i * 0.5) > 0.6;
+
+            if (sparkle) {
+                const size = 2 + Math.sin(time * 0.01 + i) * 1;
+                ctx.fillStyle = 'rgba(255, 250, 220, 0.9)';
+                ctx.beginPath();
+                ctx.arc(x, y, size, 0, Math.PI * 2);
+                ctx.fill();
+
+                // 十字闪光
+                ctx.strokeStyle = 'rgba(255, 250, 220, 0.5)';
+                ctx.lineWidth = 1;
+                ctx.beginPath();
+                ctx.moveTo(x - size * 2, y);
+                ctx.lineTo(x + size * 2, y);
+                ctx.moveTo(x, y - size * 2);
+                ctx.lineTo(x, y + size * 2);
+                ctx.stroke();
+            }
+        }
+    }
+
+    // ============================================
+    // 4. 沙滩 - 沙纹、透明海水、贝壳、椰树
+    // ============================================
+    function drawBeach(ctx, w, h, time) {
+        // 天空
+        const skyGrad = ctx.createLinearGradient(0, 0, 0, h * 0.45);
+        skyGrad.addColorStop(0, '#87ceeb');
+        skyGrad.addColorStop(0.5, '#a8d8ea');
+        skyGrad.addColorStop(1, '#c8e6f0');
+        ctx.fillStyle = skyGrad;
+        ctx.fillRect(0, 0, w, h * 0.45);
+
+        // 白云
+        drawBeachClouds(ctx, w, h, time);
+
+        // 透明海水
+        drawClearWater(ctx, w, h, time);
+
+        // 沙滩
+        drawDetailedSand(ctx, w, h, time);
+
+        // 椰树剪影
+        drawCoconutTrees(ctx, w, h, time);
+    }
+
+    function drawBeachClouds(ctx, w, h, time) {
+        const cloudData = [
+            { x: w * 0.15, y: h * 0.12, size: 50 },
+            { x: w * 0.45, y: h * 0.08, size: 65 },
+            { x: w * 0.75, y: h * 0.15, size: 55 }
+        ];
+
+        cloudData.forEach((cloud, idx) => {
+            const drift = Math.sin(time * 0.0003 + idx) * 5;
+            ctx.fillStyle = 'rgba(255, 255, 255, 0.9)';
+
+            for (let i = 0; i < 5; i++) {
+                const cx = cloud.x + drift + (i - 2) * cloud.size * 0.4;
+                const cy = cloud.y + Math.sin(i * 1.2) * 8;
+                const cr = cloud.size * (0.25 + Math.sin(i * 0.8) * 0.1);
+                ctx.beginPath();
+                ctx.arc(cx, cy, cr, 0, Math.PI * 2);
+                ctx.fill();
+            }
+        });
+    }
+
+    function drawClearWater(ctx, w, h, time) {
+        // 浅水区渐变（透明效果），底部使用蜿蜒边界
+        const boundaryPhase = sceneParticles.boundaryWavePhase || 0;
+
+        ctx.save();
+        ctx.beginPath();
+        // 顶部直线
+        ctx.moveTo(0, h * 0.35);
+        for (let x = 0; x <= w; x += 4) {
+            const topY = h * 0.35 + Math.sin(x * 0.01 + time * 0.001) * 3;
+            ctx.lineTo(x, topY);
+        }
+        // 底部蜿蜒曲线
+        for (let x = w; x >= 0; x -= 4) {
+            let boundaryY = h * 0.52
+                + Math.sin(x * 0.008 + time * 0.001 + boundaryPhase) * 12
+                + Math.sin(x * 0.02 + time * 0.002) * 6
+                + Math.sin(x * 0.035 + time * 0.0015) * 3;
+            ctx.lineTo(x, boundaryY);
+        }
+        ctx.closePath();
+
+        const waterGrad = ctx.createLinearGradient(0, h * 0.35, 0, h * 0.55);
+        waterGrad.addColorStop(0, 'rgba(100, 180, 220, 0.5)');
+        waterGrad.addColorStop(0.5, 'rgba(80, 170, 210, 0.6)');
+        waterGrad.addColorStop(1, 'rgba(60, 150, 190, 0.7)');
+        ctx.fillStyle = waterGrad;
+        ctx.fill();
+        ctx.restore();
+
+        // 水底细节（贝壳、珊瑚）
+        ctx.save();
+        ctx.globalAlpha = 0.3;
+        for (let i = 0; i < 15; i++) {
+            const sx = (i * 83) % w;
+            const sy = h * 0.4 + (i * 17) % (h * 0.1);
+
+            ctx.fillStyle = 'rgba(200, 180, 160, 0.5)';
+            ctx.beginPath();
+            ctx.ellipse(sx, sy, 6, 4, Math.PI * 0.1, 0, Math.PI * 2);
+            ctx.fill();
+
+            ctx.strokeStyle = 'rgba(180, 160, 140, 0.4)';
+            ctx.lineWidth = 0.5;
+            for (let j = 0; j < 4; j++) {
+                ctx.beginPath();
+                ctx.arc(sx, sy, 2 + j * 1.2, Math.PI * 0.8, Math.PI * 0.2, true);
+                ctx.stroke();
+            }
+        }
+
+        // 珊瑚轮廓
+        for (let i = 0; i < 5; i++) {
+            const cx = w * 0.2 + i * w * 0.15;
+            const cy = h * 0.48;
+            ctx.strokeStyle = 'rgba(150, 100, 100, 0.3)';
+            ctx.lineWidth = 1;
+            ctx.beginPath();
+            ctx.moveTo(cx, cy);
+            for (let j = 0; j < 5; j++) {
+                ctx.lineTo(cx + (j - 2) * 4, cy - 8 - Math.abs(j - 2) * 5);
+            }
+            ctx.stroke();
+        }
+        ctx.restore();
+
+        // 波浪线
+        for (let layer = 0; layer < 3; layer++) {
+            ctx.strokeStyle = `rgba(255, 255, 255, ${0.4 - layer * 0.1})`;
+            ctx.lineWidth = 2 - layer * 0.5;
+            ctx.beginPath();
+            const waveY = h * 0.42 + layer * 15;
+            for (let x = 0; x <= w; x += 5) {
+                const y = waveY + Math.sin(x * 0.02 + time * 0.002 + layer) * 8
+                        + Math.sin(x * 0.04 + time * 0.003) * 4;
+                if (x === 0) ctx.moveTo(x, y);
+                else ctx.lineTo(x, y);
+            }
+            ctx.stroke();
+        }
+    }
+
+    function drawDetailedSand(ctx, w, h, time) {
+        const boundaryPhase = sceneParticles.boundaryWavePhase || 0;
+
+        // 沙滩基底 — 顶部跟随蜿蜒边界
+        ctx.save();
+        ctx.beginPath();
+        for (let x = 0; x <= w; x += 4) {
+            const boundaryY = h * 0.52
+                + Math.sin(x * 0.008 + time * 0.001 + boundaryPhase) * 12
+                + Math.sin(x * 0.02 + time * 0.002) * 6
+                + Math.sin(x * 0.035 + time * 0.0015) * 3;
+            if (x === 0) ctx.moveTo(x, boundaryY);
+            else ctx.lineTo(x, boundaryY);
+        }
+        ctx.lineTo(w, h);
+        ctx.lineTo(0, h);
+        ctx.closePath();
+
+        const sandGrad = ctx.createLinearGradient(0, h * 0.52, 0, h);
+        sandGrad.addColorStop(0, '#f8f0e0');
+        sandGrad.addColorStop(0.3, '#f4e8d4');
+        sandGrad.addColorStop(0.6, '#f0e0c8');
+        sandGrad.addColorStop(1, '#ecdcc0');
+        ctx.fillStyle = sandGrad;
+        ctx.fill();
+        ctx.restore();
+
+        // 风吹沙纹
+        ctx.save();
+        ctx.strokeStyle = 'rgba(200, 180, 150, 0.3)';
+        ctx.lineWidth = 1;
+        for (let y = h * 0.55; y < h; y += 8) {
+            ctx.beginPath();
+            for (let x = 0; x <= w; x += 3) {
+                const wave = Math.sin(x * 0.03 + y * 0.01) * 3;
+                if (x === 0) ctx.moveTo(x, y + wave);
+                else ctx.lineTo(x, y + wave);
+            }
+            ctx.stroke();
+        }
+        ctx.restore();
+
+        // 湿润痕迹（退潮水痕）
+        drawWetSandTraces(ctx, w, h, time);
+
+        // 海浪冲刷的水膜 — 跟随蜿蜒边界
+        ctx.save();
+        ctx.beginPath();
+        for (let x = 0; x <= w; x += 4) {
+            const foamY = h * 0.52
+                + Math.sin(x * 0.008 + time * 0.001 + boundaryPhase) * 12
+                + Math.sin(x * 0.02 + time * 0.002) * 6
+                + Math.sin(x * 0.035 + time * 0.0015) * 3;
+            if (x === 0) ctx.moveTo(x, foamY);
+            else ctx.lineTo(x, foamY);
+        }
+        ctx.lineTo(w, h * 0.57);
+        ctx.lineTo(0, h * 0.57);
+        ctx.closePath();
+        ctx.fillStyle = 'rgba(200, 220, 240, 0.15)';
+        ctx.fill();
+        ctx.restore();
+
+        // 细密泡沫 — 沿蜿蜒分界线分布
+        const foamParticles = sceneParticles.foamParticles || [];
+        foamParticles.forEach(foam => {
+            const foamLineY = h * 0.52
+                + Math.sin(foam.x * 0.008 + time * 0.001 + boundaryPhase) * 12
+                + Math.sin(foam.x * 0.02 + time * 0.002) * 6
+                + Math.sin(foam.x * 0.035 + time * 0.0015) * 3;
+            foam.opacity = 0.3 + Math.sin(time * 0.003 + foam.x * 0.1) * 0.3;
+            ctx.fillStyle = `rgba(255, 255, 255, ${foam.opacity})`;
+            ctx.beginPath();
+            ctx.arc(foam.x, foamLineY + Math.sin(foam.x * 0.05 + time * 0.002) * 5, foam.size, 0, Math.PI * 2);
+            ctx.fill();
+        });
+
+        // 脚印
+        ctx.fillStyle = 'rgba(200, 180, 150, 0.4)';
+        for (let i = 0; i < 10; i++) {
+            const footX = w * 0.25 + i * 35;
+            const footY = h * 0.7 + Math.sin(i * 0.6) * 8;
+            const offset = i % 2 === 0 ? -6 : 6;
+
+            ctx.beginPath();
+            ctx.ellipse(footX + offset, footY, 7, 11, Math.PI * 0.08, 0, Math.PI * 2);
+            ctx.fill();
+        }
+    }
+
+    function drawWetSandTraces(ctx, w, h, time) {
+        const boundaryPhase = sceneParticles.boundaryWavePhase || 0;
+
+        for (let trace = 0; trace < 3; trace++) {
+            const traceOffset = trace * 8 + 6;
+            const opacity = 0.18 - trace * 0.05;
+
+            ctx.strokeStyle = `rgba(180, 190, 200, ${opacity})`;
+            ctx.lineWidth = 2 - trace * 0.5;
+            ctx.beginPath();
+
+            for (let x = 0; x <= w; x += 5) {
+                let y = h * 0.52 + traceOffset
+                    + Math.sin(x * 0.008 + time * 0.001 + boundaryPhase) * 12
+                    + Math.sin(x * 0.02 + time * 0.002) * 6
+                    + Math.sin(x * 0.035 + time * 0.0015) * 3
+                    + Math.sin(x * (0.015 + trace * 0.003) + time * 0.0008 + trace) * 8;
+                if (x === 0) ctx.moveTo(x, y);
+                else ctx.lineTo(x, y);
+            }
+            ctx.stroke();
+        }
+
+        // 细密泡沫点沿最内层湿痕
+        ctx.fillStyle = 'rgba(255, 255, 255, 0.18)';
+        for (let x = 0; x < w; x += 14) {
+            const foamY = h * 0.52 + 6
+                + Math.sin(x * 0.008 + time * 0.001 + boundaryPhase) * 12
+                + Math.sin(x * 0.02 + time * 0.002) * 6
+                + Math.sin(x * 0.035 + time * 0.0015) * 3;
+            const foamSize = 2.5 + Math.sin(x * 0.05 + time * 0.001) * 2;
+            ctx.beginPath();
+            ctx.arc(x, foamY, foamSize, 0, Math.PI * 2);
+            ctx.fill();
+        }
+    }
+
+    function drawCoconutTrees(ctx, w, h, time) {
+        const trees = sceneParticles.coconutTrees || [
+            { x: w * 0.1, y: h * 0.35, sway: 0 },
+            { x: w * 0.85, y: h * 0.38, sway: Math.PI }
+        ];
+
+        trees.forEach(tree => {
+            const sway = Math.sin(time * 0.001 + tree.sway) * 0.1;
+
+            ctx.save();
+            ctx.translate(tree.x, tree.y);
+
+            // 树干
+            ctx.fillStyle = 'rgba(40, 30, 20, 0.9)';
+            ctx.beginPath();
+            ctx.moveTo(-8, 0);
+            ctx.quadraticCurveTo(-6 + sway * 20, -40, -4 + sway * 40, -80);
+            ctx.lineTo(4 + sway * 40, -80);
+            ctx.quadraticCurveTo(6 + sway * 20, -40, 8, 0);
+            ctx.closePath();
+            ctx.fill();
+
+            // 树叶
+            ctx.translate(sway * 40, -80);
+            ctx.fillStyle = 'rgba(30, 60, 30, 0.9)';
+
+            for (let i = 0; i < 7; i++) {
+                const leafAngle = (i / 7) * Math.PI * 2 + sway;
+                const leafLen = 50 + Math.sin(i * 1.5) * 15;
+                const leafSway = Math.sin(time * 0.002 + i) * 0.15;
+
+                ctx.save();
+                ctx.rotate(leafAngle + leafSway);
+                ctx.beginPath();
+                ctx.moveTo(0, 0);
+                ctx.quadraticCurveTo(leafLen * 0.3, -8, leafLen, -3);
+                ctx.quadraticCurveTo(leafLen * 0.3, 4, 0, 0);
+                ctx.fill();
+                ctx.restore();
+            }
+
+            // 椰子
+            ctx.fillStyle = 'rgba(60, 40, 20, 0.8)';
+            ctx.beginPath();
+            ctx.arc(-5, 5, 6, 0, Math.PI * 2);
+            ctx.arc(5, 8, 5, 0, Math.PI * 2);
+            ctx.fill();
+
+            ctx.restore();
+        });
+    }
+
+    // ============================================
+    // 5. 草原 - 草浪、野花、光柱、花粉微粒
+    // ============================================
+    function drawGrassland(ctx, w, h, time) {
+        // 天空
+        const skyGrad = ctx.createLinearGradient(0, 0, 0, h * 0.5);
+        skyGrad.addColorStop(0, '#87ceeb');
+        skyGrad.addColorStop(1, '#d0e8f5');
+        ctx.fillStyle = skyGrad;
+        ctx.fillRect(0, 0, w, h);
+
+        // 阳光光柱
+        drawSunbeams(ctx, w, h, time);
+
+        // 远山（水墨风格）
+        drawDistantHills(ctx, w, h, time);
+
+        // 草地
+        drawGrassField(ctx, w, h, time);
+
+        // 野花
+        const wildflowers = sceneParticles.wildflowers || [];
+        wildflowers.forEach(flower => {
+            const sway = Math.sin(time * 0.002 + flower.phase) * 3;
+            ctx.fillStyle = flower.color;
+            ctx.beginPath();
+            ctx.arc(flower.x + sway, flower.y, flower.size, 0, Math.PI * 2);
+            ctx.fill();
+
+            // 花蕊
+            ctx.fillStyle = '#ffeb3b';
+            ctx.beginPath();
+            ctx.arc(flower.x + sway, flower.y, flower.size * 0.4, 0, Math.PI * 2);
+            ctx.fill();
+        });
+
+        // 花粉微粒
+        const pollen = sceneParticles.pollenParticles || [];
+        pollen.forEach(p => {
+            p.y += p.speedY;
+            p.x += Math.sin(time * 0.001 + p.drift) * 0.5;
+
+            if (p.y < -10) {
+                p.y = h;
+                p.x = Math.random() * w;
+            }
+
+            ctx.fillStyle = 'rgba(255, 250, 200, 0.6)';
+            ctx.beginPath();
+            ctx.arc(p.x, p.y, p.size, 0, Math.PI * 2);
+            ctx.fill();
+        });
+    }
+
+    function drawSunbeams(ctx, w, h, time) {
+        ctx.save();
+
+        const beamPositions = [0.2, 0.4, 0.65];
+        beamPositions.forEach((pos, idx) => {
+            const x = w * pos;
+            const opacity = 0.15 + Math.sin(time * 0.001 + idx) * 0.05;
+
+            const beamGrad = ctx.createLinearGradient(x - 20, 0, x + 20, h * 0.6);
+            beamGrad.addColorStop(0, `rgba(255, 250, 200, ${opacity})`);
+            beamGrad.addColorStop(0.5, `rgba(255, 240, 180, ${opacity * 0.7})`);
+            beamGrad.addColorStop(1, 'transparent');
+
+            ctx.fillStyle = beamGrad;
+            ctx.beginPath();
+            ctx.moveTo(x - 15, 0);
+            ctx.lineTo(x - 25, h * 0.6);
+            ctx.lineTo(x + 25, h * 0.6);
+            ctx.lineTo(x + 15, 0);
+            ctx.closePath();
+            ctx.fill();
+        });
+
+        ctx.restore();
+    }
+
+    function drawDistantHills(ctx, w, h, time) {
+        // 最远的山（最浅）
+        ctx.fillStyle = 'rgba(150, 170, 180, 0.5)';
+        ctx.beginPath();
+        ctx.moveTo(0, h * 0.42);
+        for (let x = 0; x <= w; x += 20) {
+            const y = h * 0.38 + Math.sin(x * 0.003) * 25 + Math.sin(x * 0.007) * 10;
+            ctx.lineTo(x, y);
+        }
+        ctx.lineTo(w, h * 0.45);
+        ctx.lineTo(w, h * 0.5);
+        ctx.lineTo(0, h * 0.5);
+        ctx.closePath();
+        ctx.fill();
+
+        // 中景山
+        ctx.fillStyle = 'rgba(120, 150, 130, 0.6)';
+        ctx.beginPath();
+        ctx.moveTo(0, h * 0.45);
+        for (let x = 0; x <= w; x += 15) {
+            const y = h * 0.42 + Math.sin(x * 0.004 + 1) * 20 + Math.sin(x * 0.009) * 8;
+            ctx.lineTo(x, y);
+        }
+        ctx.lineTo(w, h * 0.5);
+        ctx.lineTo(0, h * 0.5);
+        ctx.closePath();
+        ctx.fill();
+    }
+
+    function drawGrassField(ctx, w, h, time) {
+        // 草地基底
+        const grassGrad = ctx.createLinearGradient(0, h * 0.48, 0, h);
+        grassGrad.addColorStop(0, '#7cb342');
+        grassGrad.addColorStop(0.3, '#689f38');
+        grassGrad.addColorStop(0.6, '#558b2f');
+        grassGrad.addColorStop(1, '#4a7c28');
+        ctx.fillStyle = grassGrad;
+        ctx.fillRect(0, h * 0.48, w, h * 0.52);
+
+        // 草浪
+        const blades = sceneParticles.grassBlades || [];
+        blades.forEach(blade => {
+            const sway = Math.sin(time * 0.003 + blade.phase + blade.x * 0.01) * 8;
+            const hue = blade.hue;
+
+            ctx.strokeStyle = `hsla(${hue}, 50%, 35%, 0.7)`;
+            ctx.lineWidth = 1.5;
+            ctx.beginPath();
+            ctx.moveTo(blade.x, blade.y);
+            ctx.quadraticCurveTo(
+                blade.x + sway * 0.5,
+                blade.y - blade.height * 0.5,
+                blade.x + sway,
+                blade.y - blade.height
+            );
+            ctx.stroke();
+        });
+    }
+
+    // ============================================
+    // 6. 花海 - 色带分区、蝴蝶纹理、飘落花瓣
+    // ============================================
+    function drawFlowerField(ctx, w, h, time) {
+        // 天空
+        const skyGrad = ctx.createLinearGradient(0, 0, 0, h * 0.35);
+        skyGrad.addColorStop(0, '#87ceeb');
+        skyGrad.addColorStop(1, '#fff5e6');
+        ctx.fillStyle = skyGrad;
+        ctx.fillRect(0, 0, w, h);
+
+        // 温暖阳光
+        const warmGlow = ctx.createRadialGradient(w * 0.5, h * 0.2, 0, w * 0.5, h * 0.2, w * 0.6);
+        warmGlow.addColorStop(0, 'rgba(255, 240, 200, 0.3)');
+        warmGlow.addColorStop(0.5, 'rgba(255, 220, 150, 0.1)');
+        warmGlow.addColorStop(1, 'transparent');
+        ctx.fillStyle = warmGlow;
+        ctx.fillRect(0, 0, w, h);
+
+        // 花田色带
+        drawFlowerBands(ctx, w, h, time);
+
+        // 蝴蝶
+        const butterflies = sceneParticles.butterflies || [];
+        butterflies.forEach(butterfly => {
+            // 更新位置
+            butterfly.x += butterfly.vx + Math.sin(time * 0.002 + butterfly.wingPhase) * 0.5;
+            butterfly.y += butterfly.vy + Math.cos(time * 0.0015 + butterfly.wingPhase) * 0.3;
+            butterfly.wingPhase += 0.15;
+
+            // 边界反弹
+            if (butterfly.x < 0 || butterfly.x > w) butterfly.vx *= -1;
+            if (butterfly.y < h * 0.2 || butterfly.y > h * 0.7) butterfly.vy *= -1;
+
+            drawDetailedButterfly(ctx, butterfly.x, butterfly.y, butterfly.color, butterfly.wingPhase);
+        });
+
+        // 飘落花瓣
+        const petals = sceneParticles.fallingPetals || [];
+        petals.forEach(petal => {
+            petal.y += petal.speedY;
+            petal.x += petal.speedX + Math.sin(time * 0.001 + petal.rotation) * 0.5;
+            petal.rotation += petal.rotSpeed;
+
+            if (petal.y > h + 20) {
+                petal.y = -20;
+                petal.x = Math.random() * w;
+            }
+
+            ctx.save();
+            ctx.translate(petal.x, petal.y);
+            ctx.rotate(petal.rotation);
+
+            ctx.fillStyle = petal.color;
+            ctx.beginPath();
+            ctx.moveTo(0, -petal.size);
+            ctx.bezierCurveTo(petal.size * 0.5, -petal.size * 0.5, petal.size * 0.5, petal.size * 0.5, 0, petal.size);
+            ctx.bezierCurveTo(-petal.size * 0.5, petal.size * 0.5, -petal.size * 0.5, -petal.size * 0.5, 0, -petal.size);
+            ctx.fill();
+
+            ctx.restore();
+        });
+    }
+
+    function drawFlowerBands(ctx, w, h, time) {
+        const bands = [
+            { y: h * 0.35, height: h * 0.15, colors: ['#9b59b6', '#8e44ad', '#7d3c98'] },
+            { y: h * 0.5, height: h * 0.15, colors: ['#f1c40f', '#f39c12', '#e67e22'] },
+            { y: h * 0.65, height: h * 0.15, colors: ['#e91e63', '#ec407a', '#f48fb1'] },
+            { y: h * 0.8, height: h * 0.2, colors: ['#fff', '#f5f5f5', '#eeeeee'] }
+        ];
+
+        bands.forEach((band, bandIdx) => {
+            // 背景渐变
+            const bandGrad = ctx.createLinearGradient(0, band.y, 0, band.y + band.height);
+            bandGrad.addColorStop(0, band.colors[0]);
+            bandGrad.addColorStop(0.5, band.colors[1]);
+            bandGrad.addColorStop(1, band.colors[2]);
+            ctx.fillStyle = bandGrad;
+            ctx.fillRect(0, band.y, w, band.height);
+
+            // 花朵细节
+            const patches = (sceneParticles.flowerPatches || []).filter(p => p.y >= band.y && p.y < band.y + band.height);
+            patches.forEach(patch => {
+                const sway = Math.sin(time * 0.002 + patch.phase) * 6;
+                const rotationOffset = patch.rotationOffset || 0;
+                const sizeVar = patch.petalSizeVariation || 1;
+
+                // 五瓣花 — 各瓣角度有变化
+                for (let i = 0; i < 5; i++) {
+                    const angle = (i / 5) * Math.PI * 2 + rotationOffset;
+                    ctx.fillStyle = patch.colors[bandIdx % 3];
+                    ctx.beginPath();
+                    ctx.ellipse(
+                        patch.x + sway + Math.cos(angle) * patch.size * 0.5 * sizeVar,
+                        patch.y + Math.sin(angle) * patch.size * 0.5 * sizeVar,
+                        patch.size * 0.6 * sizeVar,
+                        patch.size * 0.35 * sizeVar,
+                        angle, 0, Math.PI * 2
+                    );
+                    ctx.fill();
+
+                    // 花瓣边缘高光
+                    ctx.strokeStyle = 'rgba(255, 255, 255, 0.3)';
+                    ctx.lineWidth = 0.5;
+                    ctx.stroke();
+                }
+
+                // 花心
+                ctx.fillStyle = '#ffd700';
+                ctx.beginPath();
+                ctx.arc(patch.x + sway, patch.y, patch.size * 0.3, 0, Math.PI * 2);
+                ctx.fill();
+
+                // 花蕊细节点
+                ctx.fillStyle = '#ff9800';
+                for (let j = 0; j < 5; j++) {
+                    const dotAngle = (j / 5) * Math.PI * 2;
+                    const dotX = patch.x + sway + Math.cos(dotAngle) * patch.size * 0.15;
+                    const dotY = patch.y + Math.sin(dotAngle) * patch.size * 0.15;
+                    ctx.beginPath();
+                    ctx.arc(dotX, dotY, patch.size * 0.08, 0, Math.PI * 2);
+                    ctx.fill();
+                }
+            });
+        });
+    }
+
+    function drawDetailedButterfly(ctx, x, y, color, wingPhase) {
+        ctx.save();
+        ctx.translate(x, y);
+
+        const wingAngle = Math.sin(wingPhase) * 0.6;
+        const wingSize = 12;
+
+        // 左翅
+        ctx.save();
+        ctx.rotate(-wingAngle);
+        ctx.fillStyle = color;
+
+        // 翅膀形状
+        ctx.beginPath();
+        ctx.moveTo(0, 0);
+        ctx.bezierCurveTo(-wingSize * 0.5, -wingSize * 0.8, -wingSize * 1.2, -wingSize * 0.5, -wingSize, 0);
+        ctx.bezierCurveTo(-wingSize * 1.2, wingSize * 0.5, -wingSize * 0.5, wingSize * 0.8, 0, wingSize * 0.3);
+        ctx.closePath();
+        ctx.fill();
+
+        // 翅膀纹理
+        ctx.strokeStyle = 'rgba(0, 0, 0, 0.3)';
+        ctx.lineWidth = 0.5;
+        ctx.beginPath();
+        ctx.moveTo(0, 0);
+        ctx.lineTo(-wingSize * 0.7, -wingSize * 0.3);
+        ctx.moveTo(0, 0);
+        ctx.lineTo(-wingSize * 0.6, wingSize * 0.2);
+        ctx.stroke();
+
+        ctx.restore();
+
+        // 右翅
+        ctx.save();
+        ctx.rotate(wingAngle);
+        ctx.fillStyle = color;
+
+        ctx.beginPath();
+        ctx.moveTo(0, 0);
+        ctx.bezierCurveTo(wingSize * 0.5, -wingSize * 0.8, wingSize * 1.2, -wingSize * 0.5, wingSize, 0);
+        ctx.bezierCurveTo(wingSize * 1.2, wingSize * 0.5, wingSize * 0.5, wingSize * 0.8, 0, wingSize * 0.3);
+        ctx.closePath();
+        ctx.fill();
+
+        ctx.strokeStyle = 'rgba(0, 0, 0, 0.3)';
+        ctx.lineWidth = 0.5;
+        ctx.beginPath();
+        ctx.moveTo(0, 0);
+        ctx.lineTo(wingSize * 0.7, -wingSize * 0.3);
+        ctx.moveTo(0, 0);
+        ctx.lineTo(wingSize * 0.6, wingSize * 0.2);
+        ctx.stroke();
+
+        ctx.restore();
+
+        // 身体
+        ctx.fillStyle = '#333';
+        ctx.beginPath();
+        ctx.ellipse(0, 0, 2, 8, 0, 0, Math.PI * 2);
+        ctx.fill();
+
+        // 触角
+        ctx.strokeStyle = '#333';
+        ctx.lineWidth = 1;
+        ctx.beginPath();
+        ctx.moveTo(-1, -8);
+        ctx.lineTo(-3, -12);
+        ctx.moveTo(1, -8);
+        ctx.lineTo(3, -12);
+        ctx.stroke();
+
+        ctx.restore();
+    }
+
+    // ============================================
+    // 7. 星空 - 银河、星云、流星、雪山剪影
+    // ============================================
+    function drawStarrySky(ctx, w, h, time) {
+        // 深空背景
+        const skyGrad = ctx.createRadialGradient(w/2, h * 0.3, 0, w/2, h * 0.3, w);
+        skyGrad.addColorStop(0, '#0a0a20');
+        skyGrad.addColorStop(0.4, '#050515');
+        skyGrad.addColorStop(1, '#000005');
+        ctx.fillStyle = skyGrad;
+        ctx.fillRect(0, 0, w, h);
+
+        // 银河
+        drawMilkyWay(ctx, w, h, time);
+
+        // 星云
+        drawNebulae(ctx, w, h, time);
+
+        // 星星
+        const stars = sceneParticles.stars || [];
+        stars.forEach(star => {
+            const twinkle = Math.sin(time * star.twinkleSpeed + star.twinklePhase);
+            const size = star.size * (0.8 + twinkle * 0.4);
+            const brightness = star.brightness * (0.7 + twinkle * 0.3);
+
+            ctx.fillStyle = `rgba(255, 255, 255, ${brightness})`;
+            ctx.beginPath();
+            ctx.arc(star.x, star.y, size, 0, Math.PI * 2);
+            ctx.fill();
+
+            // 较亮的星星添加光芒
+            if (star.size > 1.5) {
+                ctx.strokeStyle = `rgba(255, 255, 255, ${brightness * 0.3})`;
+                ctx.lineWidth = 0.5;
+                ctx.beginPath();
+                ctx.moveTo(star.x - size * 3, star.y);
+                ctx.lineTo(star.x + size * 3, star.y);
+                ctx.moveTo(star.x, star.y - size * 3);
+                ctx.lineTo(star.x, star.y + size * 3);
+                ctx.stroke();
+            }
+        });
+
+        // 流星
+        if (Math.random() > 0.995) {
+            sceneParticles.shootingStars = sceneParticles.shootingStars || [];
+            sceneParticles.shootingStars.push({
+                x: Math.random() * w * 0.7,
+                y: Math.random() * h * 0.3,
+                length: 80 + Math.random() * 60,
+                speed: 8 + Math.random() * 6,
+                life: 1
+            });
+        }
+
+        (sceneParticles.shootingStars || []).forEach((meteor, idx) => {
+            meteor.x += meteor.speed * 0.7;
+            meteor.y += meteor.speed * 0.5;
+            meteor.life -= 0.02;
+
+            if (meteor.life > 0) {
+                const tailGrad = ctx.createLinearGradient(
+                    meteor.x, meteor.y,
+                    meteor.x - meteor.length * 0.7, meteor.y - meteor.length * 0.5
+                );
+                tailGrad.addColorStop(0, `rgba(255, 255, 255, ${meteor.life})`);
+                tailGrad.addColorStop(0.3, `rgba(200, 220, 255, ${meteor.life * 0.6})`);
+                tailGrad.addColorStop(1, 'transparent');
+
+                ctx.strokeStyle = tailGrad;
+                ctx.lineWidth = 2;
+                ctx.beginPath();
+                ctx.moveTo(meteor.x, meteor.y);
+                ctx.lineTo(meteor.x - meteor.length * 0.7, meteor.y - meteor.length * 0.5);
+                ctx.stroke();
+            }
+        });
+
+        // 清理消失的流星
+        sceneParticles.shootingStars = (sceneParticles.shootingStars || []).filter(m => m.life > 0);
+
+        // 雪山剪影
+        drawMountainSilhouettes(ctx, w, h, time);
+    }
+
+    function drawMilkyWay(ctx, w, h, time) {
+        ctx.save();
+        ctx.globalAlpha = 0.25;
+        ctx.translate(w * 0.5, h * 0.4);
+        ctx.rotate(Math.PI * 0.15 + time * 0.00001);
+
+        // 银河带
+        for (let i = 0; i < 300; i++) {
+            const dist = Math.random() * Math.min(w, h) * 0.8;
+            const angle = (Math.random() - 0.5) * Math.PI * 0.3;
+            const x = Math.cos(angle) * dist;
+            const y = Math.sin(angle) * dist * 0.15;
+
+            const brightness = Math.random() * 0.5;
+            ctx.fillStyle = `rgba(255, 255, 255, ${brightness})`;
+            ctx.beginPath();
+            ctx.arc(x, y, Math.random() * 1.5, 0, Math.PI * 2);
+            ctx.fill();
+        }
+
+        ctx.restore();
+    }
+
+    function drawNebulae(ctx, w, h, time) {
+        ctx.save();
+        ctx.globalAlpha = 0.15;
+
+        // 紫色星云
+        const nebula1 = ctx.createRadialGradient(w * 0.25, h * 0.35, 0, w * 0.25, h * 0.35, w * 0.25);
+        nebula1.addColorStop(0, 'rgba(139, 92, 246, 0.4)');
+        nebula1.addColorStop(0.5, 'rgba(139, 92, 246, 0.2)');
+        nebula1.addColorStop(1, 'transparent');
+        ctx.fillStyle = nebula1;
+        ctx.fillRect(0, 0, w, h);
+
+        // 蓝色星云
+        const nebula2 = ctx.createRadialGradient(w * 0.7, h * 0.5, 0, w * 0.7, h * 0.5, w * 0.2);
+        nebula2.addColorStop(0, 'rgba(59, 130, 246, 0.35)');
+        nebula2.addColorStop(0.5, 'rgba(59, 130, 246, 0.15)');
+        nebula2.addColorStop(1, 'transparent');
+        ctx.fillStyle = nebula2;
+        ctx.fillRect(0, 0, w, h);
+
+        // 粉色星云
+        const nebula3 = ctx.createRadialGradient(w * 0.5, h * 0.25, 0, w * 0.5, h * 0.25, w * 0.15);
+        nebula3.addColorStop(0, 'rgba(236, 72, 153, 0.3)');
+        nebula3.addColorStop(1, 'transparent');
+        ctx.fillStyle = nebula3;
+        ctx.fillRect(0, 0, w, h);
+
+        ctx.restore();
+    }
+
+    function drawMountainSilhouettes(ctx, w, h, time) {
+        // 雪山剪影
+        ctx.fillStyle = 'rgba(20, 25, 35, 0.95)';
+        ctx.beginPath();
+        ctx.moveTo(0, h);
+
+        const peaks = [
+            { x: w * 0.05, y: h * 0.75 },
+            { x: w * 0.12, y: h * 0.65 },
+            { x: w * 0.18, y: h * 0.72 },
+            { x: w * 0.28, y: h * 0.58 },
+            { x: w * 0.35, y: h * 0.68 },
+            { x: w * 0.45, y: h * 0.62 },
+            { x: w * 0.55, y: h * 0.55 },
+            { x: w * 0.62, y: h * 0.65 },
+            { x: w * 0.72, y: h * 0.6 },
+            { x: w * 0.8, y: h * 0.68 },
+            { x: w * 0.88, y: h * 0.72 },
+            { x: w * 0.95, y: h * 0.7 },
+            { x: w, y: h * 0.75 }
+        ];
+
+        peaks.forEach(peak => {
+            ctx.lineTo(peak.x, peak.y);
+        });
+
+        ctx.lineTo(w, h);
+        ctx.closePath();
+        ctx.fill();
+
+        // 雪顶辉光
+        peaks.forEach(peak => {
+            if (peak.y < h * 0.65) {
+                const glow = ctx.createRadialGradient(peak.x, peak.y, 0, peak.x, peak.y, 15);
+                glow.addColorStop(0, 'rgba(100, 150, 200, 0.3)');
+                glow.addColorStop(1, 'transparent');
+                ctx.fillStyle = glow;
+                ctx.fillRect(peak.x - 15, peak.y - 15, 30, 30);
+            }
+        });
+    }
+
+    // ============================================
+    // 8. 城市 - 窗户灯光、烟花、河面倒影
+    // ============================================
+    function drawCity(ctx, w, h, time) {
+        // 夜空
+        const skyGrad = ctx.createLinearGradient(0, 0, 0, h);
+        skyGrad.addColorStop(0, '#0a0a1a');
+        skyGrad.addColorStop(0.4, '#0f1025');
+        skyGrad.addColorStop(1, '#151530');
+        ctx.fillStyle = skyGrad;
+        ctx.fillRect(0, 0, w, h);
+
+        // 星星
+        for (let i = 0; i < 50; i++) {
+            const sx = (i * 73 + 11) % w;
+            const sy = (i * 37 + 7) % (h * 0.4);
+            const twinkle = Math.sin(time * 0.003 + i);
+
+            ctx.fillStyle = `rgba(255, 255, 255, ${0.4 + twinkle * 0.3})`;
+            ctx.beginPath();
+            ctx.arc(sx, sy, 0.8 + twinkle * 0.3, 0, Math.PI * 2);
+            ctx.fill();
+        }
+
+        // 建筑群
+        drawCityBuildings(ctx, w, h, time);
+
+        // 河流
+        drawRiver(ctx, w, h, time);
+
+        // 烟花
+        drawFireworks(ctx, w, h, time);
+    }
+
+    function drawCityBuildings(ctx, w, h, time) {
+        const buildings = sceneParticles.buildings || [];
+
+        buildings.forEach((building, bIdx) => {
+            const bx = building.x;
+            const bw = building.width;
+            const bh = building.height;
+            const by = h * 0.5 - bh + h * 0.45;
+
+            // 建筑主体
+            const buildGrad = ctx.createLinearGradient(bx, by, bx + bw, by);
+            buildGrad.addColorStop(0, '#1a1a25');
+            buildGrad.addColorStop(0.5, '#222235');
+            buildGrad.addColorStop(1, '#1a1a25');
+            ctx.fillStyle = buildGrad;
+            ctx.fillRect(bx, by, bw, bh);
+
+            // 窗户
+            let winIdx = 0;
+            for (let row = 0; row < building.windowRows; row++) {
+                for (let col = 0; col < building.windowCols; col++) {
+                    const win = building.windows[winIdx];
+                    if (win && win.lit) {
+                        const wx = bx + 8 + col * 18;
+                        const wy = by + 12 + row * 22;
+
+                        // 闪烁效果
+                        let brightness = 0.7;
+                        if (win.flicker) {
+                            brightness = 0.5 + Math.sin(time * 0.01 + win.flickerPhase) * 0.3;
+                        }
+
+                        // 暖黄或冷白灯光
+                        const isWarm = Math.random() > 0.4;
+                        const color = isWarm
+                            ? `rgba(255, 220, 150, ${brightness})`
+                            : `rgba(200, 220, 255, ${brightness})`;
+
+                        ctx.fillStyle = color;
+                        ctx.fillRect(wx, wy, 8, 10);
+
+                        // 窗户光晕
+                        ctx.fillStyle = isWarm
+                            ? `rgba(255, 200, 100, ${brightness * 0.2})`
+                            : `rgba(180, 200, 255, ${brightness * 0.15})`;
+                        ctx.fillRect(wx - 2, wy - 2, 12, 14);
+                    }
+                    winIdx++;
+                }
+            }
+        });
+    }
+
+    function drawRiver(ctx, w, h, time) {
+        // 河流基底
+        const riverY = h * 0.85;
+        const riverGrad = ctx.createLinearGradient(0, riverY, 0, h);
+        riverGrad.addColorStop(0, 'rgba(20, 30, 50, 0.9)');
+        riverGrad.addColorStop(1, 'rgba(15, 25, 40, 0.95)');
+        ctx.fillStyle = riverGrad;
+        ctx.fillRect(0, riverY, w, h * 0.15);
+
+        // 倒影
+        ctx.save();
+        ctx.globalAlpha = 0.25;
+        ctx.scale(1, -0.3);
+        ctx.translate(0, -h * 4.5);
+
+        const buildings = sceneParticles.buildings || [];
+        buildings.forEach(building => {
+            const bx = building.x;
+            const bw = building.width;
+            const bh = building.height;
+            const by = h * 0.5 - bh + h * 0.45;
+
+            // 扭曲效果
+            const distort = Math.sin(time * 0.002 + bx * 0.01) * 5;
+
+            ctx.fillStyle = 'rgba(100, 120, 150, 0.5)';
+            ctx.fillRect(bx + distort, by, bw, bh);
+        });
+
+        ctx.restore();
+
+        // 水波纹
+        ctx.strokeStyle = 'rgba(100, 130, 160, 0.3)';
+        ctx.lineWidth = 1;
+        for (let i = 0; i < 5; i++) {
+            const waveY = riverY + 5 + i * 8;
+            ctx.beginPath();
+            for (let x = 0; x <= w; x += 10) {
+                const y = waveY + Math.sin(x * 0.02 + time * 0.002 + i) * 3;
+                if (x === 0) ctx.moveTo(x, y);
+                else ctx.lineTo(x, y);
+            }
+            ctx.stroke();
+        }
+    }
+
+    function drawFireworks(ctx, w, h, time) {
+        sceneParticles.fireworks = sceneParticles.fireworks || [];
+
+        // 随机生成烟花
+        if (Math.random() > 0.98 && sceneParticles.fireworks.length < 3) {
+            sceneParticles.fireworks.push({
+                x: w * 0.2 + Math.random() * w * 0.6,
+                y: h * 0.15 + Math.random() * h * 0.2,
+                particles: [],
+                age: 0,
+                color: ['#ff6b6b', '#ffd93d', '#6bcb77', '#4d96ff', '#ff6b9d', '#c9b1ff'][Math.floor(Math.random() * 6)]
+            });
+
+            // 创建爆炸粒子
+            const fw = sceneParticles.fireworks[sceneParticles.fireworks.length - 1];
+            for (let i = 0; i < 30; i++) {
+                const angle = (i / 30) * Math.PI * 2;
+                const speed = 2 + Math.random() * 3;
+                fw.particles.push({
+                    x: fw.x,
+                    y: fw.y,
+                    vx: Math.cos(angle) * speed,
+                    vy: Math.sin(angle) * speed,
+                    size: 2 + Math.random() * 2,
+                    life: 1
+                });
+            }
+        }
+
+        // 更新和绘制烟花
+        sceneParticles.fireworks.forEach((fw, fwIdx) => {
+            fw.age++;
+            fw.particles.forEach(p => {
+                p.x += p.vx;
+                p.y += p.vy + 0.1; // 重力
+                p.vx *= 0.98;
+                p.vy *= 0.98;
+                p.life -= 0.015;
+
+                if (p.life > 0) {
+                    const r = parseInt(fw.color.slice(1, 3), 16);
+                    const g = parseInt(fw.color.slice(3, 5), 16);
+                    const b = parseInt(fw.color.slice(5, 7), 16);
+
+                    ctx.fillStyle = `rgba(${r}, ${g}, ${b}, ${p.life})`;
+                    ctx.beginPath();
+                    ctx.arc(p.x, p.y, p.size * p.life, 0, Math.PI * 2);
+                    ctx.fill();
+
+                    // 光晕
+                    ctx.fillStyle = `rgba(${r}, ${g}, ${b}, ${p.life * 0.3})`;
+                    ctx.beginPath();
+                    ctx.arc(p.x, p.y, p.size * p.life * 3, 0, Math.PI * 2);
+                    ctx.fill();
+                }
+            });
+        });
+
+        // 清理完成的烟花
+        sceneParticles.fireworks = sceneParticles.fireworks.filter(fw => fw.age < 80);
+    }
+
+    // ============================================
+    // 9. 天空（塔顶）- 积云体积感、光芒放射、花瓣景深
+    // ============================================
+    function drawSky(ctx, w, h, time) {
+        // 最纯净的碧蓝天空
+        const skyGrad = ctx.createLinearGradient(0, 0, 0, h);
+        skyGrad.addColorStop(0, '#4aa8ff');
+        skyGrad.addColorStop(0.3, '#6fc3ff');
+        skyGrad.addColorStop(0.6, '#87ceeb');
+        skyGrad.addColorStop(1, '#a8d8f0');
+        ctx.fillStyle = skyGrad;
+        ctx.fillRect(0, 0, w, h);
+
+        // 金色阳光
+        const sunGrad = ctx.createRadialGradient(w * 0.5, h * 0.15, 0, w * 0.5, h * 0.15, w * 0.7);
+        sunGrad.addColorStop(0, 'rgba(255, 250, 220, 0.9)');
+        sunGrad.addColorStop(0.2, 'rgba(255, 240, 180, 0.5)');
+        sunGrad.addColorStop(0.5, 'rgba(255, 220, 150, 0.2)');
+        sunGrad.addColorStop(1, 'transparent');
+        ctx.fillStyle = sunGrad;
+        ctx.fillRect(0, 0, w, h);
+
+        // 放射光芒
+        drawSunRays(ctx, w, h, time);
+
+        // 积云
+        const clouds = sceneParticles.clouds || [];
+        clouds.forEach(cloud => {
+            cloud.x += cloud.speed;
+            if (cloud.x > w + cloud.width) {
+                cloud.x = -cloud.width;
+            }
+            drawVolumetricCloud(ctx, cloud, time);
+        });
+
+        // 圣洁光晕
+        const haloGrad = ctx.createRadialGradient(w/2, h * 0.3, 0, w/2, h * 0.3, w * 0.4);
+        haloGrad.addColorStop(0, `rgba(255, 255, 230, ${0.25 + Math.sin(time * 0.002) * 0.1})`);
+        haloGrad.addColorStop(0.5, 'rgba(255, 250, 220, 0.1)');
+        haloGrad.addColorStop(1, 'transparent');
+        ctx.fillStyle = haloGrad;
+        ctx.fillRect(0, 0, w, h);
+
+        // 温暖柔光
+        ctx.fillStyle = 'rgba(255, 245, 230, 0.1)';
+        ctx.fillRect(0, 0, w, h);
+
+        // 飘落花瓣（带景深）
+        const petals = sceneParticles.petals || [];
+        petals.forEach(petal => {
+            petal.y += petal.speedY;
+            petal.x += petal.speedX + Math.sin(time * 0.001 + petal.wobble) * 0.8;
+            petal.rotation += petal.rotSpeed;
+            petal.wobble += 0.02;
+
+            if (petal.y > h + 30) {
+                petal.y = -30;
+                petal.x = Math.random() * w;
+                petal.depth = Math.random();
+            }
+
+            // 景深模糊效果
+            const blur = petal.depth < 0.3 ? 0.5 : petal.depth > 0.7 ? 0.7 : 1;
+            const size = petal.size * (0.7 + petal.depth * 0.6);
+
+            ctx.save();
+            ctx.globalAlpha = blur;
+            ctx.translate(petal.x, petal.y);
+            ctx.rotate(petal.rotation);
+
+            // 花瓣颜色（粉白渐变）
+            const petalGrad = ctx.createLinearGradient(-size, 0, size, 0);
+            petalGrad.addColorStop(0, 'rgba(255, 200, 210, 0.9)');
+            petalGrad.addColorStop(0.5, 'rgba(255, 240, 245, 0.95)');
+            petalGrad.addColorStop(1, 'rgba(255, 180, 200, 0.85)');
+
+            ctx.fillStyle = petalGrad;
+            ctx.beginPath();
+            ctx.moveTo(0, -size);
+            ctx.bezierCurveTo(size * 0.5, -size * 0.5, size * 0.5, size * 0.5, 0, size);
+            ctx.bezierCurveTo(-size * 0.5, size * 0.5, -size * 0.5, -size * 0.5, 0, -size);
+            ctx.fill();
+
+            // 花瓣纹理
+            ctx.strokeStyle = 'rgba(255, 150, 180, 0.3)';
+            ctx.lineWidth = 0.5;
+            ctx.beginPath();
+            ctx.moveTo(0, -size * 0.8);
+            ctx.lineTo(0, size * 0.8);
+            ctx.stroke();
+
+            ctx.restore();
+        });
+    }
+
+    function drawSunRays(ctx, w, h, time) {
+        ctx.save();
+        ctx.globalAlpha = 0.15;
+        ctx.translate(w * 0.5, h * 0.15);
+
+        for (let i = 0; i < 12; i++) {
+            const angle = (i / 12) * Math.PI * 2 + time * 0.0001;
+            const rayLength = h * 0.8;
+            const rayWidth = 15 + Math.sin(time * 0.001 + i) * 5;
+
+            ctx.save();
+            ctx.rotate(angle);
+
+            const rayGrad = ctx.createLinearGradient(0, 0, 0, rayLength);
+            rayGrad.addColorStop(0, 'rgba(255, 250, 200, 0.6)');
+            rayGrad.addColorStop(0.3, 'rgba(255, 240, 180, 0.3)');
+            rayGrad.addColorStop(1, 'transparent');
+
+            ctx.fillStyle = rayGrad;
+            ctx.beginPath();
+            ctx.moveTo(-rayWidth / 2, 0);
+            ctx.lineTo(0, rayLength);
+            ctx.lineTo(rayWidth / 2, 0);
+            ctx.closePath();
+            ctx.fill();
+
+            ctx.restore();
+        }
+
+        ctx.restore();
+    }
+
+    function drawVolumetricCloud(ctx, cloud, time) {
+        ctx.save();
+        ctx.translate(cloud.x, cloud.y);
+
+        // 云朵阴影（底部）
+        ctx.fillStyle = 'rgba(180, 190, 200, 0.3)';
+        cloud.puffs.forEach(puff => {
+            ctx.beginPath();
+            ctx.arc(puff.ox, puff.oy + 5, puff.r * 0.9, 0, Math.PI * 2);
+            ctx.fill();
+        });
+
+        // 云朵主体
+        ctx.fillStyle = 'rgba(255, 255, 255, 0.95)';
+        cloud.puffs.forEach(puff => {
+            const puffGrad = ctx.createRadialGradient(puff.ox, puff.oy - puff.r * 0.2, 0, puff.ox, puff.oy, puff.r);
+            puffGrad.addColorStop(0, 'rgba(255, 255, 255, 1)');
+            puffGrad.addColorStop(0.6, 'rgba(250, 252, 255, 0.9)');
+            puffGrad.addColorStop(1, 'rgba(240, 245, 250, 0.7)');
+
+            ctx.fillStyle = puffGrad;
+            ctx.beginPath();
+            ctx.arc(puff.ox, puff.oy, puff.r, 0, Math.PI * 2);
+            ctx.fill();
+        });
+
+        // 云朵高光
+        ctx.fillStyle = 'rgba(255, 255, 255, 0.5)';
+        cloud.puffs.forEach(puff => {
+            ctx.beginPath();
+            ctx.arc(puff.ox - puff.r * 0.3, puff.oy - puff.r * 0.3, puff.r * 0.3, 0, Math.PI * 2);
+            ctx.fill();
+        });
+
+        ctx.restore();
+    }
+
+    // ============================================
+    // 绘制全局背景（金色光点）
+    // ============================================
+    function drawBackground(ctx, w, h, time) {
+        ctx.clearRect(0, 0, w, h);
+
+        const gradient = ctx.createRadialGradient(w/2, h/2, 0, w/2, h/2, Math.max(w, h));
+        gradient.addColorStop(0, '#2d2640');
+        gradient.addColorStop(1, '#0f0a15');
+        ctx.fillStyle = gradient;
+        ctx.fillRect(0, 0, w, h);
+
+        globalParticles.forEach(p => {
+            const twinkle = Math.sin(time * 0.003 + p.twinkle);
+            const opacity = p.opacity * (0.5 + twinkle * 0.5);
+
+            ctx.beginPath();
+            ctx.arc(p.x, p.y, p.size, 0, Math.PI * 2);
+            ctx.fillStyle = `rgba(255, 215, 150, ${opacity})`;
+            ctx.fill();
+
+            const glow = ctx.createRadialGradient(p.x, p.y, 0, p.x, p.y, p.size * 3);
+            glow.addColorStop(0, `rgba(255, 200, 100, ${opacity * 0.3})`);
+            glow.addColorStop(1, 'transparent');
+            ctx.fillStyle = glow;
+            ctx.fillRect(p.x - p.size * 3, p.y - p.size * 3, p.size * 6, p.size * 6);
+
+            p.y -= p.speedY;
+            if (p.y < -10) {
+                p.y = h + 10;
+                p.x = Math.random() * w;
+            }
+        });
+    }
+
+    // ============================================
+    // 过渡动画
+    // ============================================
+    function drawTransition(ctx, w, h, opacity) {
+        ctx.clearRect(0, 0, w, h);
+        ctx.fillStyle = `rgba(10, 5, 15, ${opacity})`;
+        ctx.fillRect(0, 0, w, h);
+    }
+
+    // ============================================
+    // 第一人称爬塔动画
+    // ============================================
+    function drawSpiralStaircase(ctx, w, h, progress, phase, time) {
+        ctx.clearRect(0, 0, w, h);
+
+        let viewAngle = 0;
+        let viewHeight = 0;
+        let viewBob = 0;
+
+        if (phase === 0) {
+            viewAngle = progress * Math.PI * 0.5;
+        } else if (phase === 1) {
+            viewAngle = Math.PI * 0.5;
+            viewHeight = progress;
+            viewBob = Math.sin(progress * Math.PI * 4) * 0.015;
+        } else if (phase === 2) {
+            viewAngle = Math.PI * 0.5 * (1 - progress);
+            viewHeight = 1;
+        }
+
+        ctx.save();
+        ctx.translate(w / 2, h / 2);
+        drawTowerInterior(ctx, w, h, viewAngle, viewHeight, viewBob, time);
+        ctx.restore();
+    }
+
+    function drawTowerInterior(ctx, w, h, angle, height, bob, time) {
+        const brightness = 0.15 + height * 0.1;
+        const bgGrad = ctx.createRadialGradient(0, 0, 0, 0, 0, Math.max(w, h) * 0.7);
+        bgGrad.addColorStop(0, `rgba(${45 + height * 20}, ${40 + height * 15}, ${60 + height * 10}, 1)`);
+        bgGrad.addColorStop(1, `rgba(${15 + height * 5}, ${10 + height * 5}, ${25 + height * 5}, 1)`);
+        ctx.fillStyle = bgGrad;
+        ctx.fillRect(-w, -h, w * 2, h * 2);
+
+        drawSpiralStairs(ctx, w, h, angle, height, bob, time);
+        drawTowerWalls(ctx, w, h, angle, height, time);
+        drawVisibleSteps(ctx, w, h, angle, height, bob, time);
+        drawClimbParticles(ctx, w, h, height, time);
+    }
+
+    function drawSpiralStairs(ctx, w, h, angle, height, bob, time) {
+        ctx.save();
+        const pillarRadius = Math.min(w, h) * 0.08;
+        const pillarGrad = ctx.createLinearGradient(-pillarRadius, 0, pillarRadius, 0);
+        pillarGrad.addColorStop(0, '#3d3530');
+        pillarGrad.addColorStop(0.5, '#5a5045');
+        pillarGrad.addColorStop(1, '#3d3530');
+        ctx.fillStyle = pillarGrad;
+        ctx.beginPath();
+        ctx.arc(0, 0, pillarRadius, 0, Math.PI * 2);
+        ctx.fill();
+
+        ctx.strokeStyle = 'rgba(30, 25, 20, 0.5)';
+        ctx.lineWidth = 1;
+        for (let i = 0; i < 8; i++) {
+            const y = -pillarRadius + i * (pillarRadius * 2 / 8);
+            ctx.beginPath();
+            ctx.moveTo(-Math.sqrt(pillarRadius * pillarRadius - y * y), y);
+            ctx.lineTo(Math.sqrt(pillarRadius * pillarRadius - y * y), y);
+            ctx.stroke();
+        }
+        ctx.restore();
+    }
+
+    function drawTowerWalls(ctx, w, h, angle, height, time) {
+        ctx.save();
+        const wallDist = Math.min(w, h) * 0.45;
+
+        for (let i = 0; i < 12; i++) {
+            const wallAngle = (i / 12) * Math.PI * 2 + angle;
+            const relativeAngle = ((wallAngle % (Math.PI * 2)) + Math.PI * 2) % (Math.PI * 2);
+
+            if (relativeAngle > Math.PI * 0.3 && relativeAngle < Math.PI * 1.7) {
+                const depth = Math.sin(wallAngle + Math.PI * 0.5);
+                const wallBrightness = 0.3 + depth * 0.2;
+
+                ctx.fillStyle = `rgba(${70 * wallBrightness}, ${60 * wallBrightness}, ${80 * wallBrightness}, 0.8)`;
+
+                const x1 = Math.cos(wallAngle) * wallDist;
+                const y1 = Math.sin(wallAngle) * wallDist * 0.3;
+                const x2 = Math.cos(wallAngle + Math.PI / 12) * wallDist;
+                const y2 = Math.sin(wallAngle + Math.PI / 12) * wallDist * 0.3;
+
+                ctx.beginPath();
+                ctx.moveTo(x1, y1 - h * 0.3);
+                ctx.lineTo(x2, y2 - h * 0.3);
+                ctx.lineTo(x2, y2 + h * 0.4);
+                ctx.lineTo(x1, y1 + h * 0.4);
+                ctx.closePath();
+                ctx.fill();
+
+                ctx.strokeStyle = 'rgba(40, 35, 45, 0.5)';
+                ctx.lineWidth = 1;
+                ctx.stroke();
+            }
+        }
+
+        const torchPositions = [0, 2, 4, 6, 8, 10];
+        torchPositions.forEach((pos, idx) => {
+            const torchAngle = (pos / 12) * Math.PI * 2 + angle;
+            const relativeAngle = ((torchAngle % (Math.PI * 2)) + Math.PI * 2) % (Math.PI * 2);
+
+            if (relativeAngle > Math.PI * 0.4 && relativeAngle < Math.PI * 1.6) {
+                const tx = Math.cos(torchAngle) * wallDist * 0.9;
+                const ty = Math.sin(torchAngle) * wallDist * 0.25;
+
+                const glowGrad = ctx.createRadialGradient(tx, ty, 0, tx, ty, 60);
+                glowGrad.addColorStop(0, `rgba(255, 180, 80, ${0.4 + Math.sin(time * 0.005 + idx) * 0.1})`);
+                glowGrad.addColorStop(0.5, 'rgba(255, 150, 50, 0.2)');
+                glowGrad.addColorStop(1, 'transparent');
+                ctx.fillStyle = glowGrad;
+                ctx.beginPath();
+                ctx.arc(tx, ty, 60, 0, Math.PI * 2);
+                ctx.fill();
+
+                drawFlame(ctx, tx, ty, time + idx * 500);
+            }
+        });
+
+        ctx.restore();
+    }
+
+    function drawFlame(ctx, x, y, time) {
+        ctx.save();
+
+        const outerFlame = ctx.createRadialGradient(x, y - 10, 0, x, y - 10, 15);
+        outerFlame.addColorStop(0, 'rgba(255, 200, 100, 0.9)');
+        outerFlame.addColorStop(0.5, 'rgba(255, 120, 30, 0.7)');
+        outerFlame.addColorStop(1, 'rgba(255, 60, 10, 0)');
+
+        ctx.fillStyle = outerFlame;
+        ctx.beginPath();
+        ctx.moveTo(x, y + 5);
+        ctx.quadraticCurveTo(x - 8 - Math.sin(time * 0.01) * 3, y - 5, x - 3 + Math.sin(time * 0.015) * 2, y - 15 - Math.sin(time * 0.008) * 5);
+        ctx.quadraticCurveTo(x, y - 25 - Math.sin(time * 0.012) * 5, x + 3 + Math.sin(time * 0.013) * 2, y - 15 - Math.sin(time * 0.009) * 5);
+        ctx.quadraticCurveTo(x + 8 + Math.sin(time * 0.011) * 3, y - 5, x, y + 5);
+        ctx.fill();
+
+        const innerFlame = ctx.createRadialGradient(x, y - 8, 0, x, y - 8, 8);
+        innerFlame.addColorStop(0, 'rgba(255, 255, 200, 0.9)');
+        innerFlame.addColorStop(1, 'rgba(255, 200, 100, 0)');
+
+        ctx.fillStyle = innerFlame;
+        ctx.beginPath();
+        ctx.arc(x, y - 8, 6, 0, Math.PI * 2);
+        ctx.fill();
+
+        ctx.restore();
+    }
+
+    function drawVisibleSteps(ctx, w, h, angle, height, bob, time) {
+        ctx.save();
+
+        const numSteps = 20;
+        const stepHeight = h * 0.04;
+        const stepWidth = w * 0.25;
+        const spiralRadius = Math.min(w, h) * 0.25;
+
+        for (let i = 0; i < numSteps; i++) {
+            const stepAngle = angle + (i / numSteps) * Math.PI * 1.5;
+            const stepY = h * 0.3 - i * stepHeight + bob * h * 50;
+
+            const relativeAngle = ((stepAngle % (Math.PI * 2)) + Math.PI * 2) % (Math.PI * 2);
+            if (relativeAngle > Math.PI * 0.2 && relativeAngle < Math.PI * 1.3) {
+                const perspective = 1 - (i / numSteps) * 0.6;
+                const dist = spiralRadius * perspective;
+
+                const stepX = Math.cos(stepAngle) * dist;
+                const stepZ = Math.sin(stepAngle) * dist;
+
+                if (stepZ > -50) {
+                    const stepBrightness = 0.4 + stepZ / spiralRadius * 0.3;
+
+                    ctx.fillStyle = `rgba(${90 * stepBrightness}, ${80 * stepBrightness}, ${70 * stepBrightness}, 0.9)`;
+                    ctx.beginPath();
+
+                    const topLeft = stepX - stepWidth * 0.3 * perspective;
+                    const topRight = stepX + stepWidth * 0.3 * perspective;
+
+                    ctx.moveTo(topLeft, stepY - stepHeight * 0.3);
+                    ctx.lineTo(topRight, stepY - stepHeight * 0.3);
+                    ctx.lineTo(topRight, stepY + stepHeight * 0.3);
+                    ctx.lineTo(topLeft, stepY + stepHeight * 0.3);
+                    ctx.closePath();
+                    ctx.fill();
+
+                    ctx.fillStyle = `rgba(${60 * stepBrightness}, ${50 * stepBrightness}, ${40 * stepBrightness}, 0.8)`;
+                    ctx.fillRect(topLeft, stepY + stepHeight * 0.1, (topRight - topLeft), stepHeight * 0.4);
+
+                    ctx.strokeStyle = `rgba(150, 130, 100, ${stepBrightness * 0.5})`;
+                    ctx.lineWidth = 1;
+                    ctx.beginPath();
+                    ctx.moveTo(topLeft, stepY - stepHeight * 0.3);
+                    ctx.lineTo(topRight, stepY - stepHeight * 0.3);
+                    ctx.stroke();
+                }
+            }
+        }
+
+        ctx.restore();
+    }
+
+    function drawClimbParticles(ctx, w, h, height, time) {
+        for (let i = 0; i < 30; i++) {
+            const px = (Math.sin(time * 0.0005 + i * 0.7) * w * 0.3);
+            const py = (Math.cos(time * 0.0007 + i * 0.5) * h * 0.4 + (time * 0.02 + i * 20) % (h * 0.8)) - h * 0.4;
+            const size = 1 + Math.sin(time * 0.003 + i) * 0.5;
+            const opacity = 0.3 + Math.sin(time * 0.002 + i * 0.3) * 0.2;
+
+            ctx.beginPath();
+            ctx.arc(px, py, size, 0, Math.PI * 2);
+            ctx.fillStyle = `rgba(255, 220, 180, ${opacity})`;
+            ctx.fill();
+        }
+
+        const glowOpacity = 0.15 + Math.sin(time * 0.002) * 0.05;
+        const glowGrad = ctx.createRadialGradient(0, 0, 0, 0, 0, Math.min(w, h) * 0.5);
+        glowGrad.addColorStop(0, `rgba(255, 200, 100, ${glowOpacity})`);
+        glowGrad.addColorStop(0.5, `rgba(255, 180, 80, ${glowOpacity * 0.5})`);
+        glowGrad.addColorStop(1, 'transparent');
+        ctx.fillStyle = glowGrad;
+        ctx.fillRect(-w, -h, w * 2, h * 2);
+    }
+
+    function performClimbTransition() {
+        const startTime = Date.now();
+        const totalDuration = CONFIG.transitionDuration;
+        const phase1Duration = totalDuration * 0.15;
+        const phase2Duration = totalDuration * 0.70;
+        const phase3Duration = totalDuration * 0.15;
+
+        mainCanvas.style.opacity = '0';
+        blessingEl.classList.remove('show');
+
+        function animateClimb() {
+            const elapsed = Date.now() - startTime;
+            let phase = 0;
+            let phaseProgress = 0;
+
+            if (elapsed < phase1Duration) {
+                phase = 0;
+                phaseProgress = elapsed / phase1Duration;
+            } else if (elapsed < phase1Duration + phase2Duration) {
+                phase = 1;
+                phaseProgress = (elapsed - phase1Duration) / phase2Duration;
+            } else if (elapsed < totalDuration) {
+                phase = 2;
+                phaseProgress = (elapsed - phase1Duration - phase2Duration) / phase3Duration;
+            } else {
+                climbCtx.clearRect(0, 0, climbCanvas.width, climbCanvas.height);
+                currentLevel++;
+                levelParticles = [];
+                sceneInitialized = false;
+                levelIndicator.textContent = `第 ${currentLevel + 1} 层`;
+                mainCanvas.style.opacity = '1';
+                showBlessing();
+
+                if (currentLevel >= CONFIG.levels.length - 1) {
+                    climbBtn.style.display = 'none';
+                    levelIndicator.style.display = 'none';
+                }
+
+                isTransitioning = false;
+                return;
+            }
+
+            const easedProgress = easeInOutCubic(phaseProgress);
+            drawSpiralStaircase(climbCtx, climbCanvas.width, climbCanvas.height, easedProgress, phase, elapsed);
+
+            climbAnimationId = requestAnimationFrame(animateClimb);
+        }
+
+        animateClimb();
+    }
+
+    function easeInOutCubic(t) {
+        return t < 0.5 ? 4 * t * t * t : 1 - Math.pow(-2 * t + 2, 3) / 2;
+    }
+
+    // ============================================
+    // 事件处理
+    // ============================================
+    function climbUp() {
+        if (isTransitioning || currentLevel >= CONFIG.levels.length - 1) return;
+        isTransitioning = true;
+        performClimbTransition();
+    }
+
+    function showBlessing() {
+        const blessing = CONFIG.levels[currentLevel].blessing;
+        blessingEl.textContent = blessing;
+        blessingEl.classList.add('show');
+
+        if (currentLevel < CONFIG.levels.length - 1) {
+            setTimeout(() => {
+                blessingEl.classList.remove('show');
+            }, CONFIG.blessingShowDuration);
+        }
+    }
+
+    // ============================================
+    // 动画循环
+    // ============================================
+    function animate(timestamp) {
+        animationTime = timestamp;
+
+        const w = mainCanvas.width;
+        const h = mainCanvas.height;
+
+        drawBackground(bgCtx, w, h, animationTime);
+
+        ctx.clearRect(0, 0, w, h);
+        drawStoneWindow(ctx, w, h, animationTime);
+
+        requestAnimationFrame(animate);
+    }
+
+    // ============================================
+    // 启动
+    // ============================================
+    init();
+
+    setTimeout(() => {
+        showBlessing();
+    }, 500);
+    </script>
+</body>
+</html>
